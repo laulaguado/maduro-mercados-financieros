@@ -7,10 +7,8 @@
 
 ## 👩‍💻 Integrantes
 
-| Nombre | Rol |
-|---|---|
-| Laura Laguado | Experto del Negocio / Modelamiento |
-| Sofía Navales | Experto TI / Preparación de datos |
+Laura Laguado
+Sofía Navales
 
 ---
 
