@@ -226,17 +226,59 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # =============================================================================
-# RUTAS DEL PROYECTO
+# RUTAS DEL PROYECTO — robustas sin importar desde dónde se lanza la app
 # =============================================================================
-BASE_DIR = os.getcwd()
+# La app puede estar en:  proyecto/app/streamlit_app.py   → raíz = ../
+#                     o en:  proyecto/streamlit_app.py      → raíz = ./
+# Buscamos la raíz como el directorio que contenga la carpeta "models/"
+
+def _encontrar_raiz() -> str:
+    """
+    Sube en el árbol de directorios desde la ubicación del script
+    hasta encontrar el directorio que contiene la carpeta 'models/'.
+    Cubre los casos:
+      · proyecto/app/streamlit_app.py  → raíz es proyecto/
+      · proyecto/streamlit_app.py      → raíz es proyecto/
+      · lanzado con `streamlit run` desde cualquier CWD
+    """
+    # Intentar primero con __file__ (funciona en la mayoría de entornos)
+    try:
+        candidato = os.path.abspath(os.path.dirname(__file__))
+    except NameError:
+        candidato = os.path.abspath(os.getcwd())
+
+    for _ in range(4):   # máximo 4 niveles hacia arriba
+        if os.path.isdir(os.path.join(candidato, "models")):
+            return candidato
+        padre = os.path.dirname(candidato)
+        if padre == candidato:
+            break
+        candidato = padre
+
+    # Si no encontramos la carpeta models/, probamos con CWD
+    cwd = os.path.abspath(os.getcwd())
+    for _ in range(4):
+        if os.path.isdir(os.path.join(cwd, "models")):
+            return cwd
+        padre = os.path.dirname(cwd)
+        if padre == cwd:
+            break
+        cwd = padre
+
+    # Último recurso: CWD tal cual
+    return os.path.abspath(os.getcwd())
+
+
+BASE_DIR = _encontrar_raiz()
 
 RUTAS = {
-    "modelo":    os.path.join(BASE_DIR, "models", "modelo_final.pkl"),
-    "dataset":   os.path.join(BASE_DIR, "data", "processed", "dataset_modelamiento.csv"),
-    "graficos":  os.path.join(BASE_DIR, "data", "processed", "graficos"),
-    "metricas":  os.path.join(BASE_DIR, "data", "processed", "comparacion_modelos.csv"),
+    "modelo":   os.path.join(BASE_DIR, "models", "modelo_final.pkl"),
+    "scaler":   os.path.join(BASE_DIR, "models", "scaler.pkl"),        # scaler separado si existe
+    "dataset":  os.path.join(BASE_DIR, "data", "processed", "dataset_modelamiento.csv"),
+    "graficos": os.path.join(BASE_DIR, "data", "processed", "graficos"),
+    "metricas": os.path.join(BASE_DIR, "data", "processed", "comparacion_modelos.csv"),
 }
-RUTAS["cluster_png"]  = os.path.join(RUTAS["graficos"], "clustering_activos.png")
+RUTAS["cluster_png"]  = os.path.join(RUTAS["graficos"], "clustering_eventos.png")
 RUTAS["roc_png"]      = os.path.join(RUTAS["graficos"], "curvas_roc.png")
 RUTAS["imp_vars_png"] = os.path.join(RUTAS["graficos"], "importancia_variables.png")
 
@@ -295,7 +337,22 @@ CLUSTER_INFO = {
 # =============================================================================
 @st.cache_resource(show_spinner=False)
 def cargar_modelo(ruta):
-    """Carga el pipeline serializado con joblib."""
+    """
+    Carga el pipeline (o modelo) serializado con joblib.
+    Retorna (objeto, tipo):
+      tipo = 'pipeline' → sklearn Pipeline con imputador+escalador+modelo
+      tipo = 'modelo'   → modelo suelto (el scaler se maneja por separado)
+    """
+    if not os.path.exists(ruta):
+        return None, None
+    obj = joblib.load(ruta)
+    from sklearn.pipeline import Pipeline as SKPipeline
+    tipo = "pipeline" if isinstance(obj, SKPipeline) else "modelo"
+    return obj, tipo
+
+@st.cache_resource(show_spinner=False)
+def cargar_scaler(ruta):
+    """Carga el scaler por separado si existe."""
     if os.path.exists(ruta):
         return joblib.load(ruta)
     return None
@@ -317,40 +374,112 @@ def cargar_metricas(ruta):
 # =============================================================================
 # FUNCIÓN: PREPARAR VECTOR DE FEATURES
 # =============================================================================
+# IMPORTANTE: Tu notebook entrenó el pipeline con X_train_std (ya estandarizado).
+# El pipeline guardado hace:  SimpleImputer → StandardScaler → Modelo
+# Pero tú aplicaste el scaler ANTES de meter al pipeline, así que el pipeline
+# interno vuelve a escalar. La app construye el vector con las mismas columnas
+# que tenía X en el notebook (features numéricas, sin columnas target_).
+# Si el pipeline es completo (imputer+scaler+modelo), pasamos datos crudos.
+# Si el pipeline es solo el modelo, necesitamos el scaler separado.
+
+# Columnas base que usó el modelo (las que X tenía después del shift+dropna)
+# Se infieren del dataset cargado; si no hay dataset se usa un conjunto mínimo.
+COLUMNAS_FEATURES_BASE = [
+    "BRENT", "WTI", "SP500", "VIX", "COLCAP", "BOVESPA",
+    "USD_COP", "GOLD", "COPPER", "EXXON", "CHEVRON",
+    "BRENT_vol20", "WTI_vol20", "SP500_vol20", "VIX_vol20",
+    "COLCAP_vol20", "BOVESPA_vol20", "USD_COP_vol20",
+    "GOLD_vol20", "COPPER_vol20", "EXXON_vol20", "CHEVRON_vol20",
+    "BRENT_mom5", "WTI_mom5", "SP500_mom5", "VIX_mom5",
+    "COLCAP_mom5", "BOVESPA_mom5", "USD_COP_mom5",
+    "GOLD_mom5", "COPPER_mom5", "EXXON_mom5", "CHEVRON_mom5",
+    "BRENT_corr_brent", "SP500_corr_brent", "VIX_corr_brent",
+    "COLCAP_corr_brent", "BOVESPA_corr_brent", "USD_COP_corr_brent",
+    "GOLD_corr_brent", "COPPER_corr_brent", "EXXON_corr_brent", "CHEVRON_corr_brent",
+    "DELTA_VIX", "dias_al_evento",
+]
+
 def preparar_input(sector, vol_20d, mom_5d, nivel_vix, corr_brent, car_pre, df_ref=None):
     """
     Construye el DataFrame de entrada para el pipeline de predicción.
-
-    Args:
-        sector (str): Sector del activo.
-        vol_20d (float): Volatilidad histórica 20 días.
-        mom_5d (float): Momentum acumulado 5 días.
-        nivel_vix (float): Nivel actual del VIX.
-        corr_brent (float): Correlación con petróleo Brent.
-        car_pre (float): CAR pre-evento.
-        df_ref (pd.DataFrame): Dataset de referencia para alinear columnas.
+    Mapea los 6 parámetros del sidebar a las columnas reales del modelo,
+    rellenando el resto con 0 (neutro tras estandarización).
 
     Returns:
-        pd.DataFrame: DataFrame con features listo para el pipeline.
+        pd.DataFrame: una fila con todas las columnas que espera el pipeline.
     """
-    input_base = pd.DataFrame({
-        "vol_20d":    [vol_20d],
-        "mom_5d":     [mom_5d],
-        "nivel_vix":  [nivel_vix],
-        "corr_brent": [corr_brent],
-        "car_pre":    [car_pre],
-        "sector":     [sector]
-    })
+    # Inferir columnas del dataset de referencia (igual que en training)
+    if df_ref is not None:
+        cols_excluir = [c for c in df_ref.columns
+                        if c.startswith("target_") or c == "sector"
+                        or c.endswith("_es_outlier") or c == "ventana_evento"]
+        columnas = [c for c in df_ref.columns if c not in cols_excluir]
+    else:
+        columnas = COLUMNAS_FEATURES_BASE
 
-    if df_ref is not None and "sector" in df_ref.columns:
-        sectores_unicos = df_ref["sector"].unique()
-        for s in sectores_unicos:
-            input_base[f"sector_{s}"] = 1 if s == sector else 0
-        input_base = input_base.drop(columns=["sector"], errors="ignore")
-        cols_modelo = [c for c in df_ref.columns if c not in ["target", "target_ar"]]
-        input_base = input_base.reindex(columns=cols_modelo, fill_value=0)
+    # Crear fila vacía (todo ceros = valor neutro en escala estándar)
+    fila = pd.DataFrame(0.0, index=[0], columns=columnas)
 
-    return input_base
+    # Mapear los parámetros del sidebar a las columnas más representativas
+    # Vol 20d → volatilidades del activo principal del sector
+    mapeo_vol = {
+        "energía":     ["BRENT_vol20", "WTI_vol20"],
+        "índice":      ["SP500_vol20", "COLCAP_vol20"],
+        "divisa":      ["USD_COP_vol20"],
+        "metal":       ["GOLD_vol20", "COPPER_vol20"],
+        "volatilidad": ["VIX_vol20"],
+    }
+    for col in mapeo_vol.get(sector, []):
+        if col in fila.columns:
+            fila[col] = vol_20d
+
+    # Mom 5d → momentum del activo principal
+    mapeo_mom = {
+        "energía":     ["BRENT_mom5", "WTI_mom5"],
+        "índice":      ["SP500_mom5", "COLCAP_mom5"],
+        "divisa":      ["USD_COP_mom5"],
+        "metal":       ["GOLD_mom5", "COPPER_mom5"],
+        "volatilidad": ["VIX_mom5"],
+    }
+    for col in mapeo_mom.get(sector, []):
+        if col in fila.columns:
+            fila[col] = mom_5d
+
+    # VIX → retorno del VIX y su volatilidad
+    for col in ["VIX", "VIX_vol20", "nivel_vix"]:
+        if col in fila.columns:
+            fila[col] = nivel_vix / 100.0   # normalizar a escala de retornos
+
+    # Delta VIX → usar el nivel como proxy
+    if "DELTA_VIX" in fila.columns:
+        fila["DELTA_VIX"] = (nivel_vix - 20) / 100.0
+
+    # Correlación Brent → columnas *_corr_brent del activo principal
+    mapeo_corr = {
+        "energía":     ["BRENT_corr_brent", "WTI_corr_brent",
+                        "EXXON_corr_brent", "CHEVRON_corr_brent"],
+        "índice":      ["SP500_corr_brent", "COLCAP_corr_brent", "BOVESPA_corr_brent"],
+        "divisa":      ["USD_COP_corr_brent"],
+        "metal":       ["GOLD_corr_brent", "COPPER_corr_brent"],
+        "volatilidad": ["VIX_corr_brent"],
+    }
+    for col in mapeo_corr.get(sector, []):
+        if col in fila.columns:
+            fila[col] = corr_brent
+
+    # CAR pre → usar como retorno del activo principal en ventana pre
+    mapeo_car = {
+        "energía":     ["BRENT"],
+        "índice":      ["SP500"],
+        "divisa":      ["USD_COP"],
+        "metal":       ["GOLD"],
+        "volatilidad": ["VIX"],
+    }
+    for col in mapeo_car.get(sector, []):
+        if col in fila.columns:
+            fila[col] = car_pre
+
+    return fila
 
 # =============================================================================
 # FUNCIÓN: GRÁFICO DE PROBABILIDADES
@@ -385,9 +514,10 @@ def grafico_probabilidades(prob_subida, prob_bajada):
 # =============================================================================
 # CARGA DE RECURSOS
 # =============================================================================
-modelo  = cargar_modelo(RUTAS["modelo"])
-df      = cargar_dataset(RUTAS["dataset"])
-metricas_df = cargar_metricas(RUTAS["metricas"])
+modelo, tipo_modelo = cargar_modelo(RUTAS["modelo"])
+scaler_separado     = cargar_scaler(RUTAS["scaler"])
+df                  = cargar_dataset(RUTAS["dataset"])
+metricas_df         = cargar_metricas(RUTAS["metricas"])
 
 # Extraer métricas (con valores de respaldo)
 if metricas_df is not None and not metricas_df.empty:
@@ -419,9 +549,11 @@ st.markdown("""
 col_est1, col_est2, col_est3 = st.columns(3)
 with col_est1:
     if modelo is not None:
-        st.success("✅ Modelo cargado correctamente")
+        emoji_tipo = "🔗" if tipo_modelo == "pipeline" else "🤖"
+        st.success(f"✅ Modelo cargado ({emoji_tipo} {tipo_modelo})")
     else:
-        st.error("❌ Modelo no encontrado — ejecuta los notebooks primero")
+        st.error(f"❌ Modelo no encontrado en:\n`{RUTAS['modelo']}`")
+        st.caption("Ejecuta el notebook 02 hasta la celda 13 para generar el .pkl")
 with col_est2:
     if df is not None:
         st.success(f"✅ Dataset: {df.shape[0]:,} registros · {df.shape[1]} variables")
@@ -514,6 +646,28 @@ with st.sidebar:
     </div>
     """, unsafe_allow_html=True)
 
+    st.markdown("---")
+    with st.expander("🔍 Diagnóstico de rutas"):
+        st.markdown(f"""
+        <div style='font-family:monospace; font-size:0.72rem; color:#7aadca; line-height:1.8;'>
+        <b>Raíz detectada:</b><br>{BASE_DIR}<br><br>
+        <b>Modelo:</b> {'✅' if os.path.exists(RUTAS['modelo']) else '❌'} models/modelo_final.pkl<br>
+        <b>Scaler:</b> {'✅' if os.path.exists(RUTAS['scaler']) else '⬜'} models/scaler.pkl<br>
+        <b>Dataset:</b> {'✅' if os.path.exists(RUTAS['dataset']) else '❌'} data/processed/dataset_modelamiento.csv<br>
+        <b>Métricas:</b> {'✅' if os.path.exists(RUTAS['metricas']) else '⬜'} data/processed/comparacion_modelos.csv<br>
+        <b>Cluster PNG:</b> {'✅' if os.path.exists(RUTAS['cluster_png']) else '⬜'} graficos/clustering_eventos.png<br>
+        </div>
+        """, unsafe_allow_html=True)
+        st.caption("Si el modelo aparece ❌, revisa que hayas corrido el notebook 02 completo.")
+
+    st.markdown("---")
+    st.markdown("""
+    <div style='font-size:0.72rem; color:#3a6080; text-align:center;'>
+    🔗 <a href='https://github.com/laulaguado/maduro-mercados-financieros'
+          style='color:#48cae4;' target='_blank'>Ver repositorio en GitHub</a>
+    </div>
+    """, unsafe_allow_html=True)
+
 # =============================================================================
 # SECCIÓN 3 — PREDICCIÓN
 # =============================================================================
@@ -533,77 +687,111 @@ with col_info:
 
 if ejecutar:
     if modelo is None:
-        st.error("⚠️ El modelo no está disponible. Ejecuta el notebook 02 para entrenarlo y guardarlo.")
+        st.error(
+            f"⚠️ El modelo no está disponible.\n\n"
+            f"**Ruta buscada:** `{RUTAS['modelo']}`\n\n"
+            f"**Raíz detectada:** `{BASE_DIR}`\n\n"
+            "Asegúrate de que el notebook 02, celda 13 haya corrido correctamente "
+            "y que la carpeta `models/` esté en la raíz del proyecto."
+        )
     else:
         with st.spinner("Procesando predicción..."):
-            # Construir vector de entrada
+            # Construir vector de entrada con las columnas del dataset de entrenamiento
             X_input = preparar_input(sector, vol_20d, mom_5d, nivel_vix, corr_brent, car_pre, df)
 
-            # Ejecutar predicción
-            pred = modelo.predict(X_input)[0]
-            prob_arr = modelo.predict_proba(X_input)[0] if hasattr(modelo, "predict_proba") else [0.5, 0.5]
-            prob_bajada, prob_subida = float(prob_arr[0]), float(prob_arr[1])
+            # Aplicar scaler separado si el pipeline no lo incluye internamente
+            # (en tu notebook el scaler se aplicó ANTES de construir el pipeline)
+            X_pred = X_input.copy()
+            if tipo_modelo == "modelo" and scaler_separado is not None:
+                try:
+                    X_pred_vals = scaler_separado.transform(X_pred)
+                    X_pred = pd.DataFrame(X_pred_vals, columns=X_pred.columns)
+                except Exception:
+                    pass  # si falla, se pasa sin escalar
 
-        # Resultado principal
-        col_pred, col_prob, col_chart = st.columns([2, 1, 2])
+            # Predicción
+            try:
+                pred = modelo.predict(X_pred)[0]
+                prob_arr = (modelo.predict_proba(X_pred)[0]
+                            if hasattr(modelo, "predict_proba") else [0.5, 0.5])
+                prob_bajada, prob_subida = float(prob_arr[0]), float(prob_arr[1])
+                error_pred = None
+            except Exception as e:
+                pred, prob_subida, prob_bajada = 0, 0.5, 0.5
+                error_pred = str(e)
 
-        with col_pred:
-            if pred == 1:
+        if error_pred:
+            st.error(f"Error durante la predicción: `{error_pred}`")
+            st.info(
+                "Esto suele ocurrir cuando las columnas del input no coinciden con las del "
+                "entrenamiento. Verifica que `data/processed/dataset_modelamiento.csv` "
+                "exista en la raíz del proyecto."
+            )
+        else:
+            # ── Resultado principal ────────────────────────────────────────
+            col_pred, col_prob, col_chart = st.columns([2, 1, 2])
+
+            with col_pred:
+                if pred == 1:
+                    st.markdown("""
+                    <div class="pred-positiva">
+                        <div style="font-size:2rem; margin-bottom:0.3rem;">📈</div>
+                        <div class="pred-label">RETORNO ANORMAL POSITIVO</div>
+                        <div style="color:#66ffb2; font-size:0.85rem; margin-top:0.3rem;">(SUBIDA)</div>
+                        <div style="color:#aaffcc; font-size:0.75rem; margin-top:0.5rem;">
+                            El activo tiene probabilidad de generar retorno anormal positivo
+                            ante un evento geopolítico de este tipo.
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                else:
+                    st.markdown("""
+                    <div class="pred-negativa">
+                        <div style="font-size:2rem; margin-bottom:0.3rem;">📉</div>
+                        <div class="pred-label">RETORNO ANORMAL NEGATIVO</div>
+                        <div style="color:#ff9999; font-size:0.85rem; margin-top:0.3rem;">(BAJADA)</div>
+                        <div style="color:#ffcccc; font-size:0.75rem; margin-top:0.5rem;">
+                            El activo tiene probabilidad de generar retorno anormal negativo
+                            ante un evento geopolítico de este tipo.
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+            with col_prob:
+                color_prob = "#00e68a" if prob_subida > 0.5 else "#ff6666"
                 st.markdown(f"""
-                <div class="pred-positiva">
-                    <div style="font-size:2rem; margin-bottom:0.3rem;">📈</div>
-                    <div class="pred-label">RETORNO ANORMAL POSITIVO</div>
-                    <div style="color:#66ffb2; font-size:0.85rem; margin-top:0.3rem;">(SUBIDA)</div>
-                    <div style="color:#aaffcc; font-size:0.75rem; margin-top:0.5rem;">
-                        El activo tiene probabilidad de generar retorno anormal positivo
-                        ante un evento geopolítico de este tipo.
+                <div style="background:rgba(13,33,55,0.9); border:1px solid #1e3a5f;
+                            border-radius:8px; padding:1rem; text-align:center;">
+                    <div style="color:#7aadca; font-size:0.75rem; text-transform:uppercase;
+                                letter-spacing:1px; margin-bottom:0.5rem;">P(Subida)</div>
+                    <div style="font-family:'IBM Plex Mono',monospace; font-size:2.2rem;
+                                font-weight:700; color:{color_prob};">
+                        {prob_subida*100:.1f}%
+                    </div>
+                    <div style="color:#5a8fa8; font-size:0.7rem; margin-top:0.3rem;">
+                        P(Bajada): {prob_bajada*100:.1f}%
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
-            else:
-                st.markdown(f"""
-                <div class="pred-negativa">
-                    <div style="font-size:2rem; margin-bottom:0.3rem;">📉</div>
-                    <div class="pred-label">RETORNO ANORMAL NEGATIVO</div>
-                    <div style="color:#ff9999; font-size:0.85rem; margin-top:0.3rem;">(BAJADA)</div>
-                    <div style="color:#ffcccc; font-size:0.75rem; margin-top:0.5rem;">
-                        El activo tiene probabilidad de generar retorno anormal negativo
-                        ante un evento geopolítico de este tipo.
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
 
-        with col_prob:
-            st.markdown(f"""
-            <div style="background:rgba(13,33,55,0.9); border:1px solid #1e3a5f;
-                        border-radius:8px; padding:1rem; text-align:center; height:100%;">
-                <div style="color:#7aadca; font-size:0.75rem; text-transform:uppercase;
-                            letter-spacing:1px; margin-bottom:0.5rem;">P(Subida)</div>
-                <div style="font-family:'IBM Plex Mono',monospace; font-size:2.2rem;
-                            font-weight:700; color:{'#00e68a' if prob_subida > 0.5 else '#ff6666'};">
-                    {prob_subida*100:.1f}%
-                </div>
-                <div style="color:#5a8fa8; font-size:0.7rem; margin-top:0.3rem;">
-                    P(Bajada): {prob_bajada*100:.1f}%
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
+            with col_chart:
+                fig_prob = grafico_probabilidades(prob_subida, prob_bajada)
+                st.pyplot(fig_prob, use_container_width=True)
+                plt.close()
 
-        with col_chart:
-            fig_prob = grafico_probabilidades(prob_subida, prob_bajada)
-            st.pyplot(fig_prob, use_container_width=True)
-            plt.close()
-
-        # Historial de predicción (si hay dataset)
-        if df is not None:
+            # ── Historial de predicciones ──────────────────────────────────
             st.markdown("#### Historial de predicciones de esta sesión")
-            pred_row = X_input.copy()
-            pred_row["sector_input"]  = sector
-            pred_row["predicción"]    = "SUBIDA 📈" if pred == 1 else "BAJADA 📉"
-            pred_row["P(subida)"]     = f"{prob_subida*100:.1f}%"
-            pred_row["P(bajada)"]     = f"{prob_bajada*100:.1f}%"
-
-            # Guardar en session_state para acumular historial
+            pred_row = pd.DataFrame({
+                "sector":     [sector],
+                "vol_20d":    [vol_20d],
+                "mom_5d":     [mom_5d],
+                "nivel_vix":  [nivel_vix],
+                "corr_brent": [corr_brent],
+                "car_pre":    [car_pre],
+                "predicción": ["SUBIDA 📈" if pred == 1 else "BAJADA 📉"],
+                "P(subida)":  [f"{prob_subida*100:.1f}%"],
+                "P(bajada)":  [f"{prob_bajada*100:.1f}%"],
+            })
             if "historial" not in st.session_state:
                 st.session_state["historial"] = pd.DataFrame()
             st.session_state["historial"] = pd.concat(
@@ -611,7 +799,6 @@ if ejecutar:
             )
             hist_mostrar = st.session_state["historial"].tail(num_filas)
             st.dataframe(hist_mostrar, use_container_width=True)
-
             csv_hist = hist_mostrar.to_csv(index=False).encode("utf-8")
             st.download_button(
                 "⬇️ Descargar historial de predicciones",
@@ -839,7 +1026,7 @@ with st.expander("ℹ️ Acerca del Proyecto — Metodología y Documentación")
 
         **Autoras:** Laura Laguado · Sofía Navales
         """)
-        st.markdown("**🔗 Repositorio GitHub:** [Ver código fuente](https://github.com)")
+        st.markdown("**🔗 Repositorio GitHub:** [laulaguado/maduro-mercados-financieros](https://github.com/laulaguado/maduro-mercados-financieros)")
 
     with tab_metodologia:
         st.markdown("""
