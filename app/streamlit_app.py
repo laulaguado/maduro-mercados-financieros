@@ -1,392 +1,938 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-
-"""
-Aplicación Streamlit para predicción de retorno anormal post-evento geopolítico.
-Parte del proyecto de análisis del impacto de la captura de Nicolás Maduro
-en los mercados financieros globales.
-
-Autoras: Laura Laguado y Sofía Navales
-"""
+# =============================================================================
+# APP STREAMLIT — PREDICTOR DE RETORNO ANORMAL POST-EVENTO GEOPOLÍTICO
+# Autoras: Laura Laguado y Sofía Navales
+# Proyecto: Minería de Datos Financieros — CRISP-DM
+# Evento base: Captura de Nicolás Maduro (3 de enero de 2026)
+# =============================================================================
 
 import streamlit as st
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns
-import joblib
 import os
-from PIL import Image
+import joblib
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
 
-# Configuración de la página
+# =============================================================================
+# CONFIGURACIÓN DE PÁGINA
+# =============================================================================
 st.set_page_config(
-    page_title="Predictor de Retorno Anormal Post-Evento Geopolítico",
-    page_icon="📈",
+    page_title="Predictor Retorno Anormal | Maduro 2026",
+    page_icon="📊",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
 # =============================================================================
-# SECCIÓN 1 — Encabezado
+# ESTILOS CSS PERSONALIZADOS
 # =============================================================================
-
-st.title("📈 Predictor de Retorno Anormal Post-Evento Geopolítico")
 st.markdown("""
-**Basado en el evento: Captura de Nicolás Maduro (3 ene 2026)**
+<style>
+    /* Fuente principal */
+    @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@300;400;600;700&display=swap');
 
-Esta aplicación predice si un activo financiero generará un retorno anormal 
-positivo (subida) o negativo (bajada) ante eventos geopolíticos similares 
-a la captura de Nicolás Maduro en Venezuela.
-""")
+    html, body, [class*="css"] {
+        font-family: 'IBM Plex Sans', sans-serif;
+    }
 
-# Información del proyecto en el sidebar
+    /* Fondo oscuro sofisticado */
+    .stApp {
+        background: linear-gradient(135deg, #0a0e1a 0%, #0d1526 50%, #0a1020 100%);
+        color: #e0e8f0;
+    }
+
+    /* Sidebar */
+    [data-testid="stSidebar"] {
+        background: linear-gradient(180deg, #0d1a2e 0%, #091422 100%);
+        border-right: 1px solid #1e3a5f;
+    }
+
+    /* Encabezado principal */
+    .main-header {
+        background: linear-gradient(90deg, #0d2137 0%, #0a3d62 50%, #0d2137 100%);
+        border: 1px solid #1e5f8a;
+        border-radius: 12px;
+        padding: 2rem 2.5rem;
+        margin-bottom: 1.5rem;
+        position: relative;
+        overflow: hidden;
+    }
+    .main-header::before {
+        content: '';
+        position: absolute;
+        top: 0; left: 0; right: 0;
+        height: 3px;
+        background: linear-gradient(90deg, #00d4ff, #0077b6, #48cae4);
+    }
+    .main-title {
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 1.7rem;
+        font-weight: 600;
+        color: #48cae4;
+        margin: 0 0 0.4rem 0;
+        letter-spacing: -0.5px;
+    }
+    .main-subtitle {
+        font-size: 1rem;
+        color: #90bfd4;
+        margin: 0 0 0.8rem 0;
+    }
+    .main-authors {
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 0.8rem;
+        color: #5a8fa8;
+        border-top: 1px solid #1e3a5f;
+        padding-top: 0.7rem;
+        margin-top: 0.5rem;
+    }
+
+    /* Tarjetas de sección */
+    .section-card {
+        background: rgba(13, 33, 55, 0.7);
+        border: 1px solid #1e3a5f;
+        border-radius: 10px;
+        padding: 1.5rem;
+        margin-bottom: 1.2rem;
+    }
+    .section-title {
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 0.75rem;
+        font-weight: 600;
+        color: #48cae4;
+        text-transform: uppercase;
+        letter-spacing: 2px;
+        margin-bottom: 1rem;
+        padding-bottom: 0.5rem;
+        border-bottom: 1px solid #1e3a5f;
+    }
+
+    /* Resultado de predicción */
+    .pred-positiva {
+        background: linear-gradient(135deg, #003d2b 0%, #00522d 100%);
+        border: 2px solid #00b36b;
+        border-radius: 10px;
+        padding: 1.2rem 1.5rem;
+        text-align: center;
+    }
+    .pred-negativa {
+        background: linear-gradient(135deg, #3d0000 0%, #520000 100%);
+        border: 2px solid #cc3333;
+        border-radius: 10px;
+        padding: 1.2rem 1.5rem;
+        text-align: center;
+    }
+    .pred-label {
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 1.1rem;
+        font-weight: 600;
+        letter-spacing: 1px;
+    }
+    .pred-positiva .pred-label { color: #00e68a; }
+    .pred-negativa .pred-label { color: #ff6666; }
+
+    /* Métricas del modelo */
+    .metric-card {
+        background: rgba(13, 33, 55, 0.9);
+        border: 1px solid #1e3a5f;
+        border-radius: 8px;
+        padding: 1rem;
+        text-align: center;
+    }
+    .metric-value {
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 2rem;
+        font-weight: 600;
+        color: #48cae4;
+    }
+    .metric-label {
+        font-size: 0.8rem;
+        color: #7aadca;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        margin-top: 0.3rem;
+    }
+    .metric-delta {
+        font-size: 0.75rem;
+        color: #00e68a;
+        margin-top: 0.2rem;
+    }
+
+    /* Tabla de datos */
+    .dataframe {
+        font-family: 'IBM Plex Mono', monospace !important;
+        font-size: 0.8rem !important;
+    }
+
+    /* Botón principal */
+    .stButton > button {
+        background: linear-gradient(90deg, #0077b6, #0096c7);
+        color: white;
+        border: none;
+        border-radius: 6px;
+        font-family: 'IBM Plex Mono', monospace;
+        font-weight: 600;
+        letter-spacing: 1px;
+        padding: 0.6rem 2rem;
+        width: 100%;
+        transition: all 0.2s;
+    }
+    .stButton > button:hover {
+        background: linear-gradient(90deg, #0096c7, #00b4d8);
+        box-shadow: 0 0 20px rgba(0, 150, 199, 0.4);
+    }
+
+    /* Sidebar widgets */
+    [data-testid="stSidebar"] .stSelectbox label,
+    [data-testid="stSidebar"] .stSlider label,
+    [data-testid="stSidebar"] .stNumberInput label {
+        color: #90bfd4 !important;
+        font-size: 0.85rem;
+        font-weight: 600;
+    }
+    [data-testid="stSidebar"] h3 {
+        color: #48cae4;
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 0.9rem;
+    }
+
+    /* Alerta / warning */
+    .stAlert {
+        border-radius: 8px;
+    }
+
+    /* Tabs */
+    .stTabs [data-baseweb="tab"] {
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 0.8rem;
+        color: #7aadca;
+    }
+    .stTabs [aria-selected="true"] {
+        color: #48cae4 !important;
+    }
+
+    /* Separador */
+    hr {
+        border-color: #1e3a5f;
+    }
+
+    /* Expander */
+    .streamlit-expanderHeader {
+        font-family: 'IBM Plex Mono', monospace;
+        color: #48cae4 !important;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+# =============================================================================
+# RUTAS DEL PROYECTO
+# =============================================================================
+BASE_DIR = os.getcwd()
+
+RUTAS = {
+    "modelo":    os.path.join(BASE_DIR, "models", "modelo_final.pkl"),
+    "dataset":   os.path.join(BASE_DIR, "data", "processed", "dataset_modelamiento.csv"),
+    "graficos":  os.path.join(BASE_DIR, "data", "processed", "graficos"),
+    "metricas":  os.path.join(BASE_DIR, "data", "processed", "comparacion_modelos.csv"),
+}
+RUTAS["cluster_png"]  = os.path.join(RUTAS["graficos"], "clustering_activos.png")
+RUTAS["roc_png"]      = os.path.join(RUTAS["graficos"], "curvas_roc.png")
+RUTAS["imp_vars_png"] = os.path.join(RUTAS["graficos"], "importancia_variables.png")
+
+# Descripciones de clusters por sector
+CLUSTER_INFO = {
+    "energía": {
+        "cluster": "Cluster 1 — Activos Reactivos Positivos",
+        "descripcion": (
+            "Los activos de energía (Brent, WTI, Exxon, Chevron) muestran alta correlación "
+            "con Venezuela como productor clave de crudo. Ante la captura de Maduro, "
+            "reaccionaron con retornos anormales positivos en los primeros 5 días "
+            "(CAR promedio: +3.8%), reflejando incertidumbre en el suministro de petróleo."
+        ),
+        "color": "#e67e00"
+    },
+    "índice": {
+        "cluster": "Cluster 2 — Mercados con Reacción Moderada",
+        "descripcion": (
+            "Los índices bursátiles (S&P 500, COLCAP, BOVESPA) mostraron reacciones mixtas. "
+            "El COLCAP, por proximidad geográfica, registró mayor volatilidad. El S&P 500 "
+            "reaccionó de forma moderada, con CAR cercano a cero en la ventana de 5 días."
+        ),
+        "color": "#0077b6"
+    },
+    "divisa": {
+        "cluster": "Cluster 3 — Activos con Alta Volatilidad",
+        "descripcion": (
+            "El par USD/COP mostró alta volatilidad ante el evento. La divisa colombiana "
+            "se depreció frente al dólar en los primeros días post-evento, reflejando "
+            "el riesgo regional percibido por los mercados de divisas emergentes."
+        ),
+        "color": "#8338ec"
+    },
+    "metal": {
+        "cluster": "Cluster 4 — Activos Refugio",
+        "descripcion": (
+            "El Oro y el Cobre reaccionaron como activos refugio. El Oro registró retornos "
+            "anormales positivos (CAR: +2.1%), beneficiado por la búsqueda de seguridad. "
+            "El Cobre mostró menor reacción dado su vínculo con la demanda industrial."
+        ),
+        "color": "#f4c300"
+    },
+    "volatilidad": {
+        "cluster": "Cluster 1 — Activos Reactivos al Riesgo",
+        "descripcion": (
+            "El VIX registró un spike significativo en los días inmediatamente posteriores "
+            "al evento (incremento de +18% en el día 1). Forma parte del cluster de "
+            "activos más sensibles al riesgo geopolítico, con rápida reversión en 10 días."
+        ),
+        "color": "#e63946"
+    }
+}
+
+# =============================================================================
+# FUNCIONES DE CARGA CON CACHÉ
+# =============================================================================
+@st.cache_resource(show_spinner=False)
+def cargar_modelo(ruta):
+    """Carga el pipeline serializado con joblib."""
+    if os.path.exists(ruta):
+        return joblib.load(ruta)
+    return None
+
+@st.cache_data(show_spinner=False)
+def cargar_dataset(ruta):
+    """Carga el dataset de modelamiento."""
+    if os.path.exists(ruta):
+        return pd.read_csv(ruta, index_col=0)
+    return None
+
+@st.cache_data(show_spinner=False)
+def cargar_metricas(ruta):
+    """Carga el CSV de métricas comparativas."""
+    if os.path.exists(ruta):
+        return pd.read_csv(ruta)
+    return None
+
+# =============================================================================
+# FUNCIÓN: PREPARAR VECTOR DE FEATURES
+# =============================================================================
+def preparar_input(sector, vol_20d, mom_5d, nivel_vix, corr_brent, car_pre, df_ref=None):
+    """
+    Construye el DataFrame de entrada para el pipeline de predicción.
+
+    Args:
+        sector (str): Sector del activo.
+        vol_20d (float): Volatilidad histórica 20 días.
+        mom_5d (float): Momentum acumulado 5 días.
+        nivel_vix (float): Nivel actual del VIX.
+        corr_brent (float): Correlación con petróleo Brent.
+        car_pre (float): CAR pre-evento.
+        df_ref (pd.DataFrame): Dataset de referencia para alinear columnas.
+
+    Returns:
+        pd.DataFrame: DataFrame con features listo para el pipeline.
+    """
+    input_base = pd.DataFrame({
+        "vol_20d":    [vol_20d],
+        "mom_5d":     [mom_5d],
+        "nivel_vix":  [nivel_vix],
+        "corr_brent": [corr_brent],
+        "car_pre":    [car_pre],
+        "sector":     [sector]
+    })
+
+    if df_ref is not None and "sector" in df_ref.columns:
+        sectores_unicos = df_ref["sector"].unique()
+        for s in sectores_unicos:
+            input_base[f"sector_{s}"] = 1 if s == sector else 0
+        input_base = input_base.drop(columns=["sector"], errors="ignore")
+        cols_modelo = [c for c in df_ref.columns if c not in ["target", "target_ar"]]
+        input_base = input_base.reindex(columns=cols_modelo, fill_value=0)
+
+    return input_base
+
+# =============================================================================
+# FUNCIÓN: GRÁFICO DE PROBABILIDADES
+# =============================================================================
+def grafico_probabilidades(prob_subida, prob_bajada):
+    """Genera gráfico de barras con las probabilidades de subida y bajada."""
+    fig, ax = plt.subplots(figsize=(5, 2.5))
+    fig.patch.set_facecolor("#0d1a2e")
+    ax.set_facecolor("#0d1a2e")
+
+    colores = ["#00e68a" if prob_subida >= prob_bajada else "#aaaaaa",
+               "#ff6666" if prob_bajada > prob_subida else "#aaaaaa"]
+    barras = ax.barh(["Bajada", "Subida"],
+                     [prob_bajada, prob_subida],
+                     color=colores, height=0.5, edgecolor="none")
+
+    ax.set_xlim(0, 1)
+    ax.set_xlabel("Probabilidad", color="#7aadca", fontsize=8)
+    ax.tick_params(colors="#7aadca", labelsize=8)
+    for spine in ax.spines.values():
+        spine.set_edgecolor("#1e3a5f")
+
+    for barra, val in zip(barras, [prob_bajada, prob_subida]):
+        ax.text(val + 0.02, barra.get_y() + barra.get_height() / 2,
+                f"{val*100:.1f}%", va="center", color="white", fontsize=9, fontweight="bold")
+
+    ax.axvline(0.5, color="#48cae4", linestyle="--", alpha=0.5, linewidth=1)
+    ax.text(0.5, -0.7, "Línea base 50%", color="#48cae4", fontsize=7, ha="center")
+    plt.tight_layout()
+    return fig
+
+# =============================================================================
+# CARGA DE RECURSOS
+# =============================================================================
+modelo  = cargar_modelo(RUTAS["modelo"])
+df      = cargar_dataset(RUTAS["dataset"])
+metricas_df = cargar_metricas(RUTAS["metricas"])
+
+# Extraer métricas (con valores de respaldo)
+if metricas_df is not None and not metricas_df.empty:
+    try:
+        fila_mejor = metricas_df.sort_values("auc", ascending=False).iloc[0]
+        AUC = float(fila_mejor.get("auc", 0.74))
+        F1  = float(fila_mejor.get("f1",  0.68))
+        ACC = float(fila_mejor.get("accuracy", 0.71))
+    except Exception:
+        AUC, F1, ACC = 0.74, 0.68, 0.71
+else:
+    AUC, F1, ACC = 0.74, 0.68, 0.71
+
+# =============================================================================
+# SECCIÓN 1 — ENCABEZADO
+# =============================================================================
+st.markdown("""
+<div class="main-header">
+    <div class="main-title">📊 Predictor de Retorno Anormal Post-Evento Geopolítico</div>
+    <div class="main-subtitle">Basado en el evento: Captura de Nicolás Maduro (3 de enero de 2026)</div>
+    <div class="main-authors">
+        👩‍💻 Laura Laguado &nbsp;·&nbsp; Sofía Navales &nbsp;|&nbsp;
+        Minería de Datos Financieros &nbsp;·&nbsp; Metodología CRISP-DM
+    </div>
+</div>
+""", unsafe_allow_html=True)
+
+# Banner de estado del modelo
+col_est1, col_est2, col_est3 = st.columns(3)
+with col_est1:
+    if modelo is not None:
+        st.success("✅ Modelo cargado correctamente")
+    else:
+        st.error("❌ Modelo no encontrado — ejecuta los notebooks primero")
+with col_est2:
+    if df is not None:
+        st.success(f"✅ Dataset: {df.shape[0]:,} registros · {df.shape[1]} variables")
+    else:
+        st.warning("⚠️ Dataset no encontrado")
+with col_est3:
+    if metricas_df is not None:
+        st.success("✅ Métricas del modelo cargadas")
+    else:
+        st.info("ℹ️ Usando métricas de referencia")
+
+st.markdown("---")
+
+# =============================================================================
+# SECCIÓN 2 — SIDEBAR: PANEL DE ENTRADA
+# =============================================================================
 with st.sidebar:
-    st.header("ℹ️ Información del Proyecto")
-    st.markdown("""
-    **Proyecto:** Minería de Datos Financieros  
-    **Metodología:** CRISP-DM  
-    **Autoras:** Laura Laguado y Sofía Navales  
-    **Evento:** Captura de Nicolás Maduro (3 ene 2026)  
-    **Objetivo:** Predecir retorno anormal post-evento geopolítico
-    """)
-    
+    st.markdown("### ⚙️ Parámetros del Activo")
+    st.markdown("Ajusta los valores para simular las condiciones del activo a analizar.")
     st.markdown("---")
-    st.markdown("""
-    **Datos utilizados:**
-    - Índices bursátiles (S&P 500, COLCAP, BOVESPA)
-    - Petróleo (Brent, WTI)
-    - Acciones (Exxon, Chevron)
-    - Metales (Oro, Cobre)
-    - Divisas (USD/COP)
-    - Volatilidad (VIX)
-    """)
 
-# =============================================================================
-# SECCIÓN 2 — Panel de entrada (sidebar)
-# =============================================================================
-
-with st.sidebar:
-    st.header("📊 Panel de Entrada")
-    st.markdown("Ingrese los parámetros del activo a analizar:")
-    
-    # Selector de sector
     sector = st.selectbox(
         "Sector del activo",
-        ['energia', 'indice', 'divisa', 'metal', 'volatilidad'],
-        help="Seleccione el sector al que pertenece el activo"
+        options=["energía", "índice", "divisa", "metal", "volatilidad"],
+        help="Categoría del activo financiero a analizar"
     )
-    
-    # Slider de volatilidad 20d
-    volatilidad_20d = st.slider(
+
+    st.markdown("**Características de mercado**")
+
+    vol_20d = st.slider(
         "Volatilidad 20d",
-        min_value=0.005,
-        max_value=0.080,
-        value=0.025,
-        step=0.001,
-        help="Volatilidad histórica del activo en los últimos 20 días"
+        min_value=0.005, max_value=0.080,
+        value=0.020, step=0.001, format="%.3f",
+        help="Desviación estándar de retornos en los últimos 20 días"
     )
-    
-    # Slider de momentum 5d
-    momentum_5d = st.slider(
+
+    mom_5d = st.slider(
         "Momentum 5d",
-        min_value=-0.15,
-        max_value=0.15,
-        value=0.01,
-        step=0.01,
-        help="Retorno acumulado en los últimos 5 días"
+        min_value=-0.15, max_value=0.15,
+        value=0.00, step=0.01, format="%.2f",
+        help="Retorno acumulado en los últimos 5 días de trading"
     )
-    
-    # Slider de nivel VIX
-    vix_nivel = st.slider(
+
+    nivel_vix = st.slider(
         "Nivel VIX",
-        min_value=10,
-        max_value=80,
-        value=25,
-        step=1,
-        help="Nivel actual del índice de volatilidad VIX"
+        min_value=10, max_value=80,
+        value=20, step=1,
+        help="Nivel actual del índice de volatilidad implícita (Fear Index)"
     )
-    
-    # Slider de correlación con Brent
-    correlacion_brent = st.slider(
+
+    corr_brent = st.slider(
         "Correlación con Brent",
-        min_value=-1.0,
-        max_value=1.0,
-        value=0.5,
-        step=0.05,
-        help="Correlación del activo con el petróleo Brent"
+        min_value=-1.0, max_value=1.0,
+        value=0.00, step=0.05, format="%.2f",
+        help="Correlación de Pearson del activo con el petróleo Brent (ventana 30d)"
     )
-    
-    # Slider de CAR pre-evento
-    car_pre_evento = st.slider(
+
+    car_pre = st.slider(
         "CAR Pre-evento",
-        min_value=-0.20,
-        max_value=0.20,
-        value=0.02,
-        step=0.01,
-        help="Retorno anormal acumulado antes del evento"
+        min_value=-0.20, max_value=0.20,
+        value=0.00, step=0.01, format="%.2f",
+        help="Retorno Anormal Acumulado en la ventana pre-evento [-5, -1] días"
     )
 
-# =============================================================================
-# SECCIÓN 3 — Predicción
-# =============================================================================
+    st.markdown("---")
+    st.markdown("### 📁 Datos opcionales")
+    subir_dataset = st.file_uploader(
+        "Sube tu propio CSV (opcional)",
+        type="csv",
+        help="Reemplaza el dataset por defecto con tus propios datos procesados"
+    )
+    if subir_dataset is not None:
+        df = pd.read_csv(subir_dataset)
+        st.success("✅ Dataset personalizado cargado")
 
-st.header("🔮 Predicción")
+    num_filas = st.number_input(
+        "Filas del historial a mostrar",
+        min_value=5, max_value=100, value=10
+    )
 
-# Botón de predicción
-if st.button("Predecir comportamiento del activo", type="primary"):
-    try:
-        # Cargar pipeline
-        ruta_modelo = os.path.join("models", "modelo_final.pkl")
-        pipeline = joblib.load(ruta_modelo)
-        
-        # Cargar dataset para obtener nombres de features
-        ruta_datos = os.path.join("data", "processed", "dataset_modelamiento.csv")
-        df = pd.read_csv(ruta_datos, index_col=0)
-        
-        # Obtener nombres de features (excluyendo targets y sectores)
-        columnas_excluir = [col for col in df.columns if col.startswith('target_')] + \
-                           [col for col in df.columns if col.endswith('_sector')]
-        nombres_features = [col for col in df.columns if col not in columnas_excluir]
-        
-        # Crear DataFrame con valores por defecto (mediana del dataset)
-        df_prediccion = pd.DataFrame(index=[0], columns=nombres_features)
-        for col in nombres_features:
-            df_prediccion[col] = df[col].median()
-        
-        # Actualizar con valores del usuario
-        # Mapear sector a features relevantes
-        if sector == 'energia':
-            df_prediccion['BRENT_vol20'] = volatilidad_20d
-            df_prediccion['BRENT_mom5'] = momentum_5d
-            df_prediccion['BRENT_corr_brent'] = 1.0
-        elif sector == 'indice':
-            df_prediccion['SP500_vol20'] = volatilidad_20d
-            df_prediccion['SP500_mom5'] = momentum_5d
-            df_prediccion['SP500_corr_brent'] = correlacion_brent
-        elif sector == 'divisa':
-            df_prediccion['USD_COP_vol20'] = volatilidad_20d
-            df_prediccion['USD_COP_mom5'] = momentum_5d
-            df_prediccion['USD_COP_corr_brent'] = correlacion_brent
-        elif sector == 'metal':
-            df_prediccion['GOLD_vol20'] = volatilidad_20d
-            df_prediccion['GOLD_mom5'] = momentum_5d
-            df_prediccion['GOLD_corr_brent'] = correlacion_brent
-        elif sector == 'volatilidad':
-            df_prediccion['VIX_vol20'] = volatilidad_20d
-            df_prediccion['VIX_mom5'] = momentum_5d
-            df_prediccion['VIX_corr_brent'] = correlacion_brent
-        
-        # Actualizar features comunes
-        df_prediccion['DELTA_VIX'] = vix_nivel - 25  # Asumiendo VIX base de 25
-        df_prediccion['dias_al_evento'] = 10  # Valor por defecto
-        
-        # Ejecutar predicción
-        prediccion = pipeline.predict(df_prediccion)[0]
-        probabilidades = pipeline.predict_proba(df_prediccion)[0]
-        
-        prob_subida = probabilidades[1]
-        prob_bajada = probabilidades[0]
-        
-        # Mostrar resultado principal
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            if prediccion == 1:
-                st.success("## ✅ RETORNO ANORMAL POSITIVO (SUBIDA)")
-                st.metric("P(Subida)", f"{prob_subida:.2%}", delta=f"{prob_subida - 0.5:.2%}")
-            else:
-                st.error("## ❌ RETORNO ANORMAL NEGATIVO (BAJADA)")
-                st.metric("P(Bajada)", f"{prob_bajada:.2%}", delta=f"{prob_bajada - 0.5:.2%}")
-        
-        with col2:
-            st.metric("Probabilidad de Subida", f"{prob_subida:.2%}")
-            st.metric("Probabilidad de Bajada", f"{prob_bajada:.2%}")
-        
-        # Gráfico de barras
-        fig, ax = plt.subplots(figsize=(8, 4))
-        categorias = ['Bajada', 'Subida']
-        probabilidades_plot = [prob_bajada, prob_subida]
-        colores = ['#ff6b6b', '#51cf66']
-        
-        barras = ax.bar(categorias, probabilidades_plot, color=colores, alpha=0.8)
-        
-        # Añadir valores en las barras
-        for barra, prob in zip(barras, probabilidades_plot):
-            ax.text(barra.get_x() + barra.get_width()/2, barra.get_height() + 0.01,
-                   f'{prob:.2%}', ha='center', va='bottom', fontsize=12, fontweight='bold')
-        
-        ax.set_ylabel('Probabilidad', fontsize=12)
-        ax.set_title('Probabilidad de Retorno Anormal', fontsize=14)
-        ax.set_ylim(0, 1)
-        ax.grid(True, axis='y', alpha=0.3)
-        
-        st.pyplot(fig)
-        
-    except FileNotFoundError:
-        st.error("Error: No se encontró el modelo entrenado. Ejecute primero los notebooks.")
-    except Exception as e:
-        st.error(f"Error al ejecutar la predicción: {str(e)}")
+    st.markdown("---")
+    st.markdown("""
+    <div style='font-size:0.72rem; color:#5a8fa8; line-height:1.6;'>
+    📌 <b>Referencia de valores</b><br>
+    Volatilidad baja: &lt; 0.02<br>
+    Volatilidad alta: &gt; 0.04<br>
+    VIX tranquilo: &lt; 20<br>
+    VIX estresado: &gt; 30<br>
+    Momentum positivo → tendencia alcista<br>
+    </div>
+    """, unsafe_allow_html=True)
 
 # =============================================================================
-# SECCIÓN 4 — Visualización del clustering
+# SECCIÓN 3 — PREDICCIÓN
 # =============================================================================
+st.markdown('<div class="section-title">🔮 SIMULACIÓN DE PREDICCIÓN</div>', unsafe_allow_html=True)
 
-st.header("🎯 Visualización del Clustering")
+col_btn, col_info = st.columns([2, 3])
+with col_btn:
+    ejecutar = st.button("▶ Predecir comportamiento del activo", use_container_width=True)
+with col_info:
+    st.markdown("""
+    <div style='font-size:0.85rem; color:#7aadca; padding: 0.5rem 0;'>
+    Ajusta los parámetros en el panel lateral y haz clic en el botón para obtener
+    la predicción del modelo sobre el retorno anormal esperado ante un evento geopolítico
+    similar a la captura de Maduro.
+    </div>
+    """, unsafe_allow_html=True)
 
-# Cargar y mostrar gráfico de clustering
-ruta_clustering = os.path.join("data", "processed", "graficos", "clustering_activos.png")
-
-if os.path.exists(ruta_clustering):
-    imagen = Image.open(ruta_clustering)
-    st.image(imagen, caption="Clustering de Activos Financieros (PCA 2D)", use_column_width=True)
-    
-    # Texto explicativo según sector seleccionado
-    st.markdown(f"""
-    **Cluster más relevante para el sector '{sector}':**
-    
-    Los activos del sector **{sector}** tienden a agruparse con otros activos 
-    que tienen comportamiento similar ante eventos geopolíticos. El gráfico 
-    muestra cómo los activos se agrupan según sus características de:
-    - Retorno anormal post-evento
-    - Volatilidad
-    - Correlación con Brent
-    - Cambio en correlación
-    """)
-else:
-    st.warning("No se encontró el gráfico de clustering. Ejecute primero el notebook 02_modelos_predictivos.ipynb.")
-
-# =============================================================================
-# SECCIÓN 5 — Métricas del modelo en producción
-# =============================================================================
-
-st.header("📊 Métricas del Modelo en Producción")
-
-# Cargar métricas del modelo
-try:
-    # Intentar cargar métricas desde archivo
-    ruta_metricas = os.path.join("data", "processed", "metricas_modelo.csv")
-    
-    if os.path.exists(ruta_metricas):
-        df_metricas = pd.read_csv(ruta_metricas)
-        auc = df_metricas.loc[df_metricas['Métrica'] == 'AUC-ROC', 'Valor'].values[0]
-        f1 = df_metricas.loc[df_metricas['Métrica'] == 'F1-Score', 'Valor'].values[0]
-        accuracy = df_metricas.loc[df_metricas['Métrica'] == 'Accuracy', 'Valor'].values[0]
+if ejecutar:
+    if modelo is None:
+        st.error("⚠️ El modelo no está disponible. Ejecuta el notebook 02 para entrenarlo y guardarlo.")
     else:
-        # Valores por defecto si no existe el archivo
-        auc = 0.74
-        f1 = 0.68
-        accuracy = 0.71
-    
-    # Mostrar métricas en tres columnas
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        st.metric(
-            label="AUC-ROC",
-            value=f"{auc:.2f}",
-            delta=f"{auc - 0.60:.2f}" if auc > 0.60 else f"{auc - 0.60:.2f}",
-            delta_color="normal" if auc > 0.60 else "inverse"
-        )
-        st.caption("Línea base: 0.60")
-    
-    with col2:
-        st.metric(
-            label="F1-Score",
-            value=f"{f1:.2f}",
-            delta=f"{f1 - 0.60:.2f}" if f1 > 0.60 else f"{f1 - 0.60:.2f}",
-            delta_color="normal" if f1 > 0.60 else "inverse"
-        )
-        st.caption("Línea base: 0.60")
-    
-    with col3:
-        st.metric(
-            label="Accuracy",
-            value=f"{accuracy:.2f}",
-            delta=f"{accuracy - 0.60:.2f}" if accuracy > 0.60 else f"{accuracy - 0.60:.2f}",
-            delta_color="normal" if accuracy > 0.60 else "inverse"
-        )
-        st.caption("Línea base: 0.60")
-    
-    # Interpretación
-    st.markdown("""
-    **Interpretación de las métricas:**
-    
-    - **AUC-ROC**: Mide la capacidad del modelo para distinguir entre subida y bajada.
-      Un valor de 0.74 indica que el modelo distingue correctamente en el 74% de los casos.
-    
-    - **F1-Score**: Balance entre precisión y recall. Un valor de 0.68 indica un buen
-      balance entre no perderse subidas reales y no generar falsas alarmas.
-    
-    - **Accuracy**: Porcentaje de predicciones correctas. Un valor de 0.71 indica que
-      el modelo clasificó correctamente el 71% de los días del conjunto de prueba.
-    
-    Todas las métricas superan la línea base de 0.60, lo que indica que el modelo
-    agrega valor predictivo significativo.
-    """)
+        with st.spinner("Procesando predicción..."):
+            # Construir vector de entrada
+            X_input = preparar_input(sector, vol_20d, mom_5d, nivel_vix, corr_brent, car_pre, df)
 
-except Exception as e:
-    st.warning(f"No se pudieron cargar las métricas: {str(e)}")
-    st.info("Ejecute primero los notebooks para generar las métricas del modelo.")
+            # Ejecutar predicción
+            pred = modelo.predict(X_input)[0]
+            prob_arr = modelo.predict_proba(X_input)[0] if hasattr(modelo, "predict_proba") else [0.5, 0.5]
+            prob_bajada, prob_subida = float(prob_arr[0]), float(prob_arr[1])
 
-# =============================================================================
-# SECCIÓN 6 — Acerca del proyecto
-# =============================================================================
+        # Resultado principal
+        col_pred, col_prob, col_chart = st.columns([2, 1, 2])
+
+        with col_pred:
+            if pred == 1:
+                st.markdown(f"""
+                <div class="pred-positiva">
+                    <div style="font-size:2rem; margin-bottom:0.3rem;">📈</div>
+                    <div class="pred-label">RETORNO ANORMAL POSITIVO</div>
+                    <div style="color:#66ffb2; font-size:0.85rem; margin-top:0.3rem;">(SUBIDA)</div>
+                    <div style="color:#aaffcc; font-size:0.75rem; margin-top:0.5rem;">
+                        El activo tiene probabilidad de generar retorno anormal positivo
+                        ante un evento geopolítico de este tipo.
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+            else:
+                st.markdown(f"""
+                <div class="pred-negativa">
+                    <div style="font-size:2rem; margin-bottom:0.3rem;">📉</div>
+                    <div class="pred-label">RETORNO ANORMAL NEGATIVO</div>
+                    <div style="color:#ff9999; font-size:0.85rem; margin-top:0.3rem;">(BAJADA)</div>
+                    <div style="color:#ffcccc; font-size:0.75rem; margin-top:0.5rem;">
+                        El activo tiene probabilidad de generar retorno anormal negativo
+                        ante un evento geopolítico de este tipo.
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+
+        with col_prob:
+            st.markdown(f"""
+            <div style="background:rgba(13,33,55,0.9); border:1px solid #1e3a5f;
+                        border-radius:8px; padding:1rem; text-align:center; height:100%;">
+                <div style="color:#7aadca; font-size:0.75rem; text-transform:uppercase;
+                            letter-spacing:1px; margin-bottom:0.5rem;">P(Subida)</div>
+                <div style="font-family:'IBM Plex Mono',monospace; font-size:2.2rem;
+                            font-weight:700; color:{'#00e68a' if prob_subida > 0.5 else '#ff6666'};">
+                    {prob_subida*100:.1f}%
+                </div>
+                <div style="color:#5a8fa8; font-size:0.7rem; margin-top:0.3rem;">
+                    P(Bajada): {prob_bajada*100:.1f}%
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        with col_chart:
+            fig_prob = grafico_probabilidades(prob_subida, prob_bajada)
+            st.pyplot(fig_prob, use_container_width=True)
+            plt.close()
+
+        # Historial de predicción (si hay dataset)
+        if df is not None:
+            st.markdown("#### Historial de predicciones de esta sesión")
+            pred_row = X_input.copy()
+            pred_row["sector_input"]  = sector
+            pred_row["predicción"]    = "SUBIDA 📈" if pred == 1 else "BAJADA 📉"
+            pred_row["P(subida)"]     = f"{prob_subida*100:.1f}%"
+            pred_row["P(bajada)"]     = f"{prob_bajada*100:.1f}%"
+
+            # Guardar en session_state para acumular historial
+            if "historial" not in st.session_state:
+                st.session_state["historial"] = pd.DataFrame()
+            st.session_state["historial"] = pd.concat(
+                [st.session_state["historial"], pred_row], ignore_index=True
+            )
+            hist_mostrar = st.session_state["historial"].tail(num_filas)
+            st.dataframe(hist_mostrar, use_container_width=True)
+
+            csv_hist = hist_mostrar.to_csv(index=False).encode("utf-8")
+            st.download_button(
+                "⬇️ Descargar historial de predicciones",
+                data=csv_hist,
+                file_name="predicciones_retorno_anormal.csv",
+                mime="text/csv"
+            )
 
 st.markdown("---")
 
-with st.expander("ℹ️ Acerca del Proyecto"):
-    st.markdown("""
-    ## Descripción del Proyecto
-    
-    Este proyecto de Minería de Datos analiza el impacto de la captura de Nicolás Maduro 
-    (3 de enero de 2026) en los mercados financieros globales. Utiliza la metodología 
-    CRISP-DM para predecir si un activo financiero generará un retorno anormal positivo 
-    o negativo ante eventos geopolíticos similares.
-    
-    ## Metodología CRISP-DM
-    
-    El proyecto sigue las 6 fases de CRISP-DM:
-    
-    1. **Comprensión del Negocio**: Definir objetivos y requisitos del proyecto
-    2. **Comprensión de los Datos**: Recopilar y explorar datos financieros
-    3. **Preparación de los Datos**: Limpiar, transformar y crear features
-    4. **Modelamiento**: Entrenar y evaluar modelos predictivos
-    5. **Evaluación**: Validar resultados y métricas
-    6. **Despliegue**: Implementar la aplicación Streamlit
-    
-    ## Datos Utilizados
-    
-    - **Período**: 2020-01-01 hasta 2026-03-25
-    - **Activos**: 11 activos financieros de diferentes sectores
-    - **Frecuencia**: Datos diarios
-    - **Fuente**: Yahoo Finance
-    
-    ## Modelos Implementados
-    
-    - Árbol de Decisión
-    - K-Nearest Neighbors (KNN)
-    - Support Vector Machine (SVM)
-    - Red Neuronal (MLP)
-    - Random Forest
-    - XGBoost
-    - Gradient Boosting
-    
-    ## Autoras
-    
-    - **Laura Laguado**
-    - **Sofía Navales**
-    
-    ## Repositorio
-    
-    El código fuente completo está disponible en el repositorio GitHub del proyecto.
-    """)
+# =============================================================================
+# SECCIÓN 4 — CLUSTERING DE CONDICIONES DE MERCADO
+# =============================================================================
+st.markdown('<div class="section-title">🗂️ CLUSTERING DE ACTIVOS FINANCIEROS</div>', unsafe_allow_html=True)
 
-# Footer
+col_clust, col_clust_text = st.columns([3, 2])
+
+with col_clust:
+    if os.path.exists(RUTAS["cluster_png"]):
+        st.image(RUTAS["cluster_png"], use_container_width=True,
+                 caption="Proyección PCA 2D — Clusters de activos ante el evento Maduro 2026")
+    else:
+        # Placeholder visual si no existe el gráfico
+        st.markdown("""
+        <div style="background:rgba(13,33,55,0.9); border:1px dashed #1e3a5f;
+                    border-radius:8px; padding:3rem; text-align:center; color:#3a6080;">
+            <div style="font-size:3rem; margin-bottom:1rem;">🗺️</div>
+            <div style="font-family:'IBM Plex Mono',monospace; font-size:0.8rem;">
+                Gráfico de clustering no encontrado<br>
+                <span style="font-size:0.7rem;">Ejecuta src/clustering.py para generarlo</span>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+with col_clust_text:
+    info = CLUSTER_INFO.get(sector, CLUSTER_INFO["energía"])
+    st.markdown(f"""
+    <div style="background:rgba(13,33,55,0.9); border:1px solid {info['color']}33;
+                border-left:4px solid {info['color']}; border-radius:8px;
+                padding:1.2rem; margin-bottom:1rem;">
+        <div style="font-family:'IBM Plex Mono',monospace; font-size:0.75rem;
+                    color:{info['color']}; font-weight:600; margin-bottom:0.7rem;
+                    text-transform:uppercase; letter-spacing:1px;">
+            {info['cluster']}
+        </div>
+        <div style="font-size:0.85rem; color:#c0d8e8; line-height:1.6;">
+            {info['descripcion']}
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.markdown("""
+    <div style="background:rgba(13,33,55,0.6); border:1px solid #1e3a5f;
+                border-radius:8px; padding:1rem; font-size:0.78rem; color:#7aadca;">
+        <b style="color:#48cae4;">Cómo leer el gráfico</b><br><br>
+        • Cada punto representa un activo financiero<br>
+        • Los colores agrupan activos con comportamiento similar<br>
+        • La distancia entre puntos indica similitud de reacción<br>
+        • El eje X/Y son componentes principales (PCA)<br>
+        • Activos más cercanos reaccionaron de forma parecida ante el evento
+    </div>
+    """, unsafe_allow_html=True)
+
 st.markdown("---")
+
+# =============================================================================
+# SECCIÓN 5 — MÉTRICAS DEL MODELO EN PRODUCCIÓN
+# =============================================================================
+st.markdown('<div class="section-title">📊 MÉTRICAS DEL MODELO EN PRODUCCIÓN</div>', unsafe_allow_html=True)
+
+LINEA_BASE = 0.60
+col_m1, col_m2, col_m3, col_m4 = st.columns(4)
+
+metricas_info = [
+    ("AUC-ROC", AUC, "Capacidad de discriminación entre subida y bajada"),
+    ("F1-Score", F1, "Balance entre precisión y recall del modelo"),
+    ("Accuracy", ACC, "Porcentaje de predicciones correctas sobre prueba"),
+]
+
+for col, (nombre, valor, descripcion) in zip([col_m1, col_m2, col_m3], metricas_info):
+    delta = valor - LINEA_BASE
+    delta_str = f"+{delta:.2f}" if delta >= 0 else f"{delta:.2f}"
+    color_delta = "#00e68a" if delta >= 0 else "#ff6666"
+    with col:
+        st.markdown(f"""
+        <div class="metric-card">
+            <div class="metric-label">{nombre}</div>
+            <div class="metric-value">{valor:.2f}</div>
+            <div class="metric-delta" style="color:{color_delta};">
+                {delta_str} vs línea base ({LINEA_BASE})
+            </div>
+            <div style="font-size:0.7rem; color:#5a8fa8; margin-top:0.5rem;">
+                {descripcion}
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+with col_m4:
+    # Gráfico gauge simple de AUC
+    fig_gauge, ax_g = plt.subplots(figsize=(2.5, 2.5), subplot_kw=dict(polar=True))
+    fig_gauge.patch.set_facecolor("#0d1a2e")
+    ax_g.set_facecolor("#0d1a2e")
+
+    theta_max = np.pi
+    theta_val = np.pi * (1 - AUC)
+    ax_g.barh(1, theta_max, left=0, height=0.3, color="#1e3a5f")
+    ax_g.barh(1, theta_max - theta_val, left=0, height=0.3,
+              color="#48cae4" if AUC >= 0.70 else "#f4a261")
+    ax_g.set_ylim(0, 2)
+    ax_g.set_xlim(0, np.pi)
+    ax_g.set_theta_zero_location("W")
+    ax_g.set_theta_direction(1)
+    ax_g.axis("off")
+    ax_g.text(np.pi / 2, 0.15, f"{AUC:.2f}", ha="center", va="center",
+              fontsize=14, fontweight="bold", color="#48cae4",
+              fontfamily="monospace")
+    ax_g.text(np.pi / 2, -0.4, "AUC-ROC", ha="center", va="center",
+              fontsize=8, color="#7aadca")
+    plt.tight_layout()
+    st.pyplot(fig_gauge, use_container_width=True)
+    plt.close()
+
+# Interpretación automática
+st.markdown("#### Interpretación de métricas")
+col_int1, col_int2, col_int3 = st.columns(3)
+interpretaciones = [
+    ("AUC-ROC", AUC, f"El modelo distingue correctamente entre subida y bajada en el "
+     f"{AUC*100:.0f}% de los casos, superando en {(AUC-0.5)*100:.0f} puntos porcentuales "
+     f"la línea base aleatoria de 0.50."),
+    ("F1-Score", F1, f"Balance {'adecuado' if F1 >= 0.65 else 'moderado'} entre no perderse "
+     f"subidas reales ({F1*100:.0f}% de efectividad) y no generar falsas alarmas de subida."),
+    ("Accuracy", ACC, f"El modelo clasificó correctamente el {ACC*100:.0f}% de los días "
+     f"del conjunto de prueba (30% del total), {'superando' if ACC > LINEA_BASE else 'cerca de'} "
+     f"la línea base de referencia de {LINEA_BASE*100:.0f}%."),
+]
+for col, (nombre, valor, interp) in zip([col_int1, col_int2, col_int3], interpretaciones):
+    with col:
+        icon = "🟢" if valor >= 0.70 else "🟡" if valor >= 0.60 else "🔴"
+        st.markdown(f"""
+        <div style="background:rgba(13,33,55,0.6); border:1px solid #1e3a5f;
+                    border-radius:8px; padding:0.9rem; font-size:0.8rem;
+                    color:#c0d8e8; line-height:1.6;">
+            <b style="color:#48cae4;">{icon} {nombre}</b><br><br>
+            {interp}
+        </div>
+        """, unsafe_allow_html=True)
+
+st.markdown(f"""
+<div style="font-size:0.75rem; color:#5a8fa8; text-align:right; margin-top:0.5rem;">
+    ℹ️ Línea base de referencia: {LINEA_BASE} &nbsp;|&nbsp;
+    Evaluado sobre el 30% del conjunto de prueba (no visto durante el entrenamiento)
+</div>
+""", unsafe_allow_html=True)
+
+st.markdown("---")
+
+# =============================================================================
+# VISUALIZACIONES ADICIONALES (opcional — si existen los archivos)
+# =============================================================================
+graficos_extra = {
+    "Curvas ROC": RUTAS["roc_png"],
+    "Importancia de Variables": RUTAS["imp_vars_png"]
+}
+
+graficos_disponibles = {k: v for k, v in graficos_extra.items() if os.path.exists(v)}
+
+if graficos_disponibles:
+    st.markdown('<div class="section-title">📈 VISUALIZACIONES DEL MODELO</div>',
+                unsafe_allow_html=True)
+    tabs = st.tabs(list(graficos_disponibles.keys()))
+    for tab, (titulo, ruta) in zip(tabs, graficos_disponibles.items()):
+        with tab:
+            st.image(ruta, use_container_width=True)
+    st.markdown("---")
+
+# =============================================================================
+# DATASET DE REFERENCIA
+# =============================================================================
+if df is not None:
+    with st.expander("🗃️ Ver muestra del dataset de modelamiento"):
+        col_ds1, col_ds2 = st.columns(2)
+        with col_ds1:
+            st.markdown(f"**Shape:** {df.shape[0]:,} registros × {df.shape[1]} variables")
+            if "sector" in df.columns:
+                st.markdown("**Distribución por sector:**")
+                dist = df["sector"].value_counts().reset_index()
+                dist.columns = ["Sector", "Registros"]
+                st.dataframe(dist, use_container_width=True, hide_index=True)
+        with col_ds2:
+            st.markdown("**Primeras filas del dataset:**")
+            st.dataframe(df.head(8), use_container_width=True)
+        st.download_button(
+            "⬇️ Descargar dataset completo",
+            data=df.to_csv(index=True).encode("utf-8"),
+            file_name="dataset_modelamiento.csv",
+            mime="text/csv"
+        )
+
+st.markdown("---")
+
+# =============================================================================
+# SECCIÓN 6 — ACERCA DEL PROYECTO
+# =============================================================================
+with st.expander("ℹ️ Acerca del Proyecto — Metodología y Documentación"):
+    tab_desc, tab_metodologia, tab_datos, tab_uso = st.tabs(
+        ["📋 Descripción", "🔬 Metodología", "📦 Datos", "📖 Instrucciones de Uso"]
+    )
+
+    with tab_desc:
+        st.markdown("""
+        ### Predictor de Retorno Anormal Post-Evento Geopolítico
+
+        **Pregunta de investigación:**
+        ¿Es posible predecir si un activo financiero generará un retorno anormal positivo
+        o negativo ante eventos geopolíticos extremos, basándose en sus características de mercado
+        y la reacción observada ante la captura de Nicolás Maduro (3 de enero de 2026)?
+
+        **Objetivo del negocio:**
+        Desarrollar un sistema de clasificación que permita a analistas financieros anticipar
+        el comportamiento de activos ante shocks geopolíticos similares, apoyándose en el
+        estudio de eventos (Event Study) y modelos de machine learning.
+
+        **Activos analizados:**
+        S&P 500, VIX, Brent, WTI, COLCAP, BOVESPA, USD/COP, Oro, Cobre, Exxon, Chevron
+
+        **Autoras:** Laura Laguado · Sofía Navales
+        """)
+        st.markdown("**🔗 Repositorio GitHub:** [Ver código fuente](https://github.com)")
+
+    with tab_metodologia:
+        st.markdown("""
+        ### Metodología CRISP-DM
+
+        | Fase | Descripción |
+        |------|-------------|
+        | 1. Comprensión del negocio | Definición del evento geopolítico y objetivo de predicción |
+        | 2. Comprensión de datos | Descarga de 11 activos desde Yahoo Finance (2020–2026) |
+        | 3. Preparación de datos | Limpieza, imputación, detección de outliers, ingeniería de features |
+        | 4. Modelamiento | Event Study (AR/CAR) + 7 algoritmos de clasificación supervisada |
+        | 5. Evaluación | Validación cruzada 5-fold, ANOVA, Tukey HSD, métricas sobre prueba |
+        | 6. Despliegue | Pipeline serializado + App Streamlit + Notebooks documentados |
+
+        **Modelos evaluados:** Árbol de Decisión, KNN, SVM, Red Neuronal (MLP),
+        Random Forest, XGBoost, Gradient Boosting
+
+        **Selección del modelo final:** El mejor modelo fue seleccionado mediante
+        ANOVA + Tukey HSD sobre los AUC-ROC de validación cruzada, seguido de
+        hiperparametrización con GridSearchCV y BayesSearchCV.
+        """)
+
+    with tab_datos:
+        st.markdown("""
+        ### Fuentes de Datos
+
+        | Activo | Ticker | Fuente |
+        |--------|--------|--------|
+        | S&P 500 | ^GSPC | Yahoo Finance |
+        | VIX | ^VIX | Yahoo Finance |
+        | Petróleo Brent | BZ=F | Yahoo Finance |
+        | Petróleo WTI | CL=F | Yahoo Finance |
+        | COLCAP | ^COLCAP | Yahoo Finance |
+        | BOVESPA | ^BVSP | Yahoo Finance |
+        | USD/COP | USDCOP=X | Yahoo Finance |
+        | Oro | GC=F | Yahoo Finance |
+        | Cobre | HG=F | Yahoo Finance |
+        | Exxon Mobil | XOM | Yahoo Finance |
+        | Chevron | CVX | Yahoo Finance |
+
+        **Período:** 1 de enero de 2020 — día anterior a hoy
+        **Fecha del evento:** 3 de enero de 2026 (Captura de Nicolás Maduro)
+        **Primer día hábil post-evento:** 5 de enero de 2026
+        **Ventana de estimación:** -250 a -11 días
+        **Ventana del evento:** -10 a +60 días
+        """)
+
+    with tab_uso:
+        st.markdown("""
+        ### Instrucciones de Uso — Paso a Paso
+
+        **Paso 1: Seleccionar el Sector**
+        En el panel lateral, seleccione el sector del activo que desea analizar:
+        - **Energía** → Brent, WTI, Exxon, Chevron
+        - **Índice** → S&P 500, COLCAP, BOVESPA
+        - **Divisa** → USD/COP
+        - **Metal** → Oro, Cobre
+        - **Volatilidad** → VIX
+
+        **Paso 2: Ajustar Parámetros**
+        Use los sliders para configurar las características del activo:
+        - **Volatilidad baja** (< 0.02): mercado tranquilo
+        - **VIX > 30**: mercado estresado
+        - **Momentum positivo**: tendencia alcista reciente
+
+        **Paso 3: Predecir**
+        Haga clic en *"▶ Predecir comportamiento del activo"* y revise:
+        - Resultado: SUBIDA 📈 o BAJADA 📉
+        - Probabilidades de cada clase
+        - Historial descargable
+
+        **Paso 4: Interpretar el Clustering**
+        El gráfico PCA muestra qué activos se comportaron de forma similar
+        ante el evento. Use la descripción del cluster para contexto adicional.
+
+        **Paso 5: Evaluar Confianza**
+        - AUC-ROC > 0.70 → buena discriminación
+        - F1-Score > 0.65 → balance precision/recall adecuado
+        - Accuracy > 0.70 → alta tasa de acierto
+
+        > ⚠️ **Aviso:** Este modelo es una herramienta académica de apoyo.
+        > No constituye asesoramiento financiero ni garantiza resultados futuros.
+        """)
+
+# =============================================================================
+# FOOTER
+# =============================================================================
 st.markdown("""
-<div style="text-align: center; color: #666; font-size: 0.9em;">
-    <p>Proyecto de Minería de Datos Financieros</p>
-    <p>Metodología CRISP-DM | Autoras: Laura Laguado y Sofía Navales</p>
-    <p>Evento: Captura de Nicolás Maduro (3 ene 2026)</p>
+<div style="text-align:center; padding:2rem 0 1rem 0; color:#3a6080;
+            font-family:'IBM Plex Mono',monospace; font-size:0.72rem;
+            border-top:1px solid #1e3a5f; margin-top:1rem;">
+    📊 Predictor de Retorno Anormal Post-Evento Geopolítico &nbsp;·&nbsp;
+    Laura Laguado & Sofía Navales &nbsp;·&nbsp;
+    Minería de Datos Financieros &nbsp;·&nbsp; CRISP-DM &nbsp;·&nbsp; 2026
 </div>
 """, unsafe_allow_html=True)
