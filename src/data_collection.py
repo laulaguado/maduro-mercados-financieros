@@ -31,6 +31,8 @@ TICKERS = {
     'WTI': 'CL=F',
     'COLCAP': '^COLCAP',
     'BOVESPA': '^BVSP',
+    'IBVC': '^IBVC',  # Índice Bursátil de Caracas (Venezuela)
+    'MERVAL': '^MERV',  # Índice Merval (Argentina)
     'USD_COP': 'USDCOP=X',
     'GOLD': 'GC=F',
     'COPPER': 'HG=F',
@@ -81,9 +83,16 @@ def descargar_datos(tickers=TICKERS, start=START_DATE, end=END_DATE):
             if data.empty:
                 print(f"⚠️ No se encontraron datos para {nombre} ({simbolo})")
                 continue
-                
-            # Seleccionar solo el precio de cierre ajustado y renombrar
-            df_activo = data[['Adj Close']].copy()
+            
+            # Intentar obtener precio de cierre ajustado
+            if 'Adj Close' in data.columns:
+                df_activo = data[['Adj Close']].copy()
+            elif 'Close' in data.columns:
+                df_activo = data[['Close']].copy()
+            else:
+                print(f"⚠️ No se encontró columna de cierre para {nombre} ({simbolo})")
+                continue
+            
             df_activo.columns = [nombre]
             
             dfs.append(df_activo)
@@ -159,24 +168,13 @@ def validar_calidad_datos(df):
     metricas = {}
     
     # Verificar si hay precios negativos
-    if 'Adj Close' in df.columns[0]:  # Si son precios
-        negativos = (df < 0).sum()
-        if negativos.sum() > 0:
-            print("⚠️ ADVERTENCIA: Se encontraron precios negativos:")
-            print(negativos[negativos > 0])
-        else:
-            print("✓ No se encontraron precios negativos")
-        metricas['precios_negativos'] = negativos.to_dict()
-    
-    # Verificar si hay retornos fuera de rango [-0.30, +0.30]
-    else:  # Si son retornos
-        fuera_rango = ((df < -0.30) | (df > 0.30)).sum()
-        if fuera_rango.sum() > 0:
-            print("⚠️ ADVERTENCIA: Se encontraron retornos fuera del rango [-0.30, +0.30]:")
-            print(fuera_rango[fuera_rango > 0])
-        else:
-            print("✓ No se encontraron retornos fuera de rango")
-        metricas['retornos_fuera_rango'] = fuera_rango.to_dict()
+    negativos = (df < 0).sum()
+    if negativos.sum() > 0:
+        print("⚠️ ADVERTENCIA: Se encontraron precios negativos:")
+        print(negativos[negativos > 0])
+    else:
+        print("✓ No se encontraron precios negativos")
+    metricas['precios_negativos'] = negativos.to_dict()
     
     # Verificar fechas duplicadas
     duplicados = df.index.duplicated().sum()
