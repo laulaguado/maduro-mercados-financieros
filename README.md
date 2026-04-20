@@ -234,5 +234,3 @@ Para preguntas o comentarios sobre este proyecto, contacte a:
 
 ---
 
-**Proyecto desarrollado como parte del curso de Minería de Datos**  
-**Metodología CRISP-DM | 2026**
