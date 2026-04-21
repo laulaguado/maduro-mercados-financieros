@@ -372,6 +372,62 @@ def cargar_metricas(ruta):
     return None
 
 # =============================================================================
+# NUEVAS FUNCIONES PARA PREDICCIÓN CORREGIDA
+# =============================================================================
+@st.cache_resource(show_spinner=False)
+def cargar_artefactos():
+    """Carga pipeline, scaler, columnas_X y medias_X desde la carpeta models/."""
+    pipeline = joblib.load(os.path.join(BASE_DIR, 'models', 'modelo_final.pkl'))
+    scaler = joblib.load(os.path.join(BASE_DIR, 'models', 'scaler.pkl'))
+    columnas_X = pd.read_csv(
+        os.path.join(BASE_DIR, 'models', 'columnas_X.csv'), header=None
+    )[0].tolist()
+    medias_X = pd.read_csv(
+        os.path.join(BASE_DIR, 'models', 'medias_X.csv'), index_col=0
+    ).squeeze()
+    return pipeline, scaler, columnas_X, medias_X
+
+def construir_vector_entrada(valores_usuario: dict, columnas_X: list, medias_X: pd.Series) -> pd.DataFrame:
+    """Construye un DataFrame de 1 fila con exactamente las columnas de columnas_X."""
+    fila = medias_X.copy()
+    
+    mapa_features = {
+        'volatilidad_20d': valores_usuario.get('volatilidad_20d'),
+        'momentum_5d': valores_usuario.get('momentum_5d'),
+        'delta_vix': valores_usuario.get('delta_vix'),
+        'correlacion_brent_30d': valores_usuario.get('correlacion_brent_30d'),
+        'CAR_pre_evento': valores_usuario.get('car_pre_evento'),
+    }
+    
+    for col, val in mapa_features.items():
+        if col in fila.index and val is not None:
+            fila[col] = val
+    
+    if 'sector' in columnas_X:
+        fila['sector'] = valores_usuario.get('sector', fila.get('sector', 0))
+    
+    X_entrada = pd.DataFrame([fila])[columnas_X]
+    return X_entrada
+
+def predecir(valores_usuario: dict) -> tuple:
+    """Retorna (prob_bajada, prob_subida)."""
+    try:
+        pipeline, scaler, columnas_X, medias_X = cargar_artefactos()
+    except Exception:
+        return 0.5, 0.5
+    
+    X_entrada = construir_vector_entrada(valores_usuario, columnas_X, medias_X)
+    X_escalado = pd.DataFrame(scaler.transform(X_entrada), columns=columnas_X)
+    
+    if hasattr(pipeline, 'named_steps') and 'scaler' in pipeline.named_steps:
+        modelo_solo = pipeline.named_steps['modelo']
+        probabilidades = modelo_solo.predict_proba(X_escalado)[0]
+    else:
+        probabilidades = pipeline.predict_proba(X_escalado)[0]
+    
+    return float(probabilidades[0]), float(probabilidades[1])
+
+# =============================================================================
 # FUNCIÓN: PREPARAR VECTOR DE FEATURES
 # =============================================================================
 
@@ -679,39 +735,24 @@ with col_info:
     """, unsafe_allow_html=True)
 
 if ejecutar:
-    if modelo is None:
-        st.error(
-            f"⚠️ El modelo no está disponible.\n\n"
-            f"**Ruta buscada:** `{RUTAS['modelo']}`\n\n"
-            f"**Raíz detectada:** `{BASE_DIR}`\n\n"
-            "Asegúrate de que el notebook 02, celda 13 haya corrido correctamente "
-            "y que la carpeta `models/` esté en la raíz del proyecto."
-        )
-    else:
-        with st.spinner("Procesando predicción..."):
-            # Construir vector de entrada con las columnas del dataset de entrenamiento
-            X_input = preparar_input(sector, vol_20d, mom_5d, nivel_vix, corr_brent, car_pre, df)
-
-            # Aplicar scaler separado si el pipeline no lo incluye internamente
-            # (en tu notebook el scaler se aplicó ANTES de construir el pipeline)
-            X_pred = X_input.copy()
-            if tipo_modelo == "modelo" and scaler_separado is not None:
-                try:
-                    X_pred_vals = scaler_separado.transform(X_pred)
-                    X_pred = pd.DataFrame(X_pred_vals, columns=X_pred.columns)
-                except Exception:
-                    pass  # si falla, se pasa sin escalar
-
-            # Predicción
-            try:
-                pred = modelo.predict(X_pred)[0]
-                prob_arr = (modelo.predict_proba(X_pred)[0]
-                            if hasattr(modelo, "predict_proba") else [0.5, 0.5])
-                prob_bajada, prob_subida = float(prob_arr[0]), float(prob_arr[1])
-                error_pred = None
-            except Exception as e:
-                pred, prob_subida, prob_bajada = 0, 0.5, 0.5
-                error_pred = str(e)
+    with st.spinner("Procesando predicción..."):
+        # Usar la nueva función de predicción corregida
+        valores_usuario = {
+            'volatilidad_20d': vol_20d,
+            'momentum_5d': mom_5d,
+            'delta_vix': nivel_vix,
+            'correlacion_brent_30d': corr_brent,
+            'car_pre_evento': car_pre,
+            'sector': sector
+        }
+        
+        try:
+            prob_bajada, prob_subida = predecir(valores_usuario)
+            pred = 1 if prob_subida > 0.5 else 0
+            error_pred = None
+        except Exception as e:
+            pred, prob_subida, prob_bajada = 0, 0.5, 0.5
+            error_pred = str(e)
 
         if error_pred:
             st.error(f"Error durante la predicción: `{error_pred}`")

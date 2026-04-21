@@ -220,7 +220,7 @@ def aplicar_smote_si_necesario(X_train, y_train, umbral_desbalance=0.40):
         return X_train, y_train
 
 
-def entrenar_con_validacion_cruzada(X_train, y_train, n_folds=5):
+def entrenar_con_validacion_cruzada(X_train, y_train, n_folds=10):
     """
     Entrena modelos con validación cruzada estratificada.
     
