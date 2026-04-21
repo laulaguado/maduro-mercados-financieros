@@ -226,11 +226,5 @@ El proyecto sigue las 6 fases de CRISP-DM:
 5. **Evaluación**: Validar resultados y métricas
 6. **Despliegue**: Implementar aplicación Streamlit
 
-## 📧 Contacto
-
-Para preguntas o comentarios sobre este proyecto, contacte a:
-- Laura Laguado
-- Sofía Navales
-
 ---
 
