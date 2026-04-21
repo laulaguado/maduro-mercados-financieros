@@ -374,13 +374,6 @@ def cargar_metricas(ruta):
 # =============================================================================
 # FUNCIÓN: PREPARAR VECTOR DE FEATURES
 # =============================================================================
-# IMPORTANTE: Tu notebook entrenó el pipeline con X_train_std (ya estandarizado).
-# El pipeline guardado hace:  SimpleImputer → StandardScaler → Modelo
-# Pero tú aplicaste el scaler ANTES de meter al pipeline, así que el pipeline
-# interno vuelve a escalar. La app construye el vector con las mismas columnas
-# que tenía X en el notebook (features numéricas, sin columnas target_).
-# Si el pipeline es completo (imputer+scaler+modelo), pasamos datos crudos.
-# Si el pipeline es solo el modelo, necesitamos el scaler separado.
 
 # Columnas base que usó el modelo (las que X tenía después del shift+dropna)
 # Se infieren del dataset cargado; si no hay dataset se usa un conjunto mínimo.
