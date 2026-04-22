@@ -285,7 +285,7 @@ RUTAS["imp_vars_png"] = os.path.join(RUTAS["graficos"], "importancia_variables.p
 # Descripciones de clusters por sector
 CLUSTER_INFO = {
     "energía": {
-        "cluster": "Cluster 1 — Activos Reactivos Positivos",
+        "cluster": "Grupo: Activos Energéticos",
         "descripcion": (
             "Los activos de energía (Brent, WTI, Exxon, Chevron) muestran alta correlación "
             "con Venezuela como productor clave de crudo. Ante la captura de Maduro, "
@@ -295,7 +295,7 @@ CLUSTER_INFO = {
         "color": "#e67e00"
     },
     "índice": {
-        "cluster": "Cluster 2 — Mercados con Reacción Moderada",
+        "cluster": "Grupo: Índices Bursátiles",
         "descripcion": (
             "Los índices bursátiles (S&P 500, COLCAP, BOVESPA) mostraron reacciones mixtas. "
             "El COLCAP, por proximidad geográfica, registró mayor volatilidad. El S&P 500 "
@@ -304,16 +304,16 @@ CLUSTER_INFO = {
         "color": "#0077b6"
     },
     "divisa": {
-        "cluster": "Cluster 3 — Activos con Alta Volatilidad",
+        "cluster": "Grupo: Divisas Emergentes",
         "descripcion": (
-            "El par USD/COP mostró alta volatilidad ante el evento. La divisa colombiana "
-            "se depreció frente al dólar en los primeros días post-evento, reflejando "
-            "el riesgo regional percibido por los mercados de divisas emergentes."
+            "El par USD/COP showed high volatility during the event. The Colombian peso "
+            "depreciated against the dollar in the first days post-event, reflecting "
+            "perceived regional risk by emerging market currency traders."
         ),
         "color": "#8338ec"
     },
     "metal": {
-        "cluster": "Cluster 4 — Activos Refugio",
+        "cluster": "Grupo: Metales Preciosos",
         "descripcion": (
             "El Oro y el Cobre reaccionaron como activos refugio. El Oro registró retornos "
             "anormales positivos (CAR: +2.1%), beneficiado por la búsqueda de seguridad. "
@@ -322,13 +322,13 @@ CLUSTER_INFO = {
         "color": "#f4c300"
     },
     "volatilidad": {
-        "cluster": "Cluster 1 — Activos Reactivos al Riesgo",
+        "cluster": "Grupo: Activos de Volatilidad",
         "descripcion": (
             "El VIX registró un spike significativo en los días inmediatamente posteriores "
-            "al evento (incremento de +18% en el día 1). Forma parte del cluster de "
-            "activos más sensibles al riesgo geopolítico, con rápida reversión en 10 días."
+            "al evento (incremento de +18% en el día 1). Es uno de los activos más "
+            "sensibles al riesgo geopolítico, con rápida reversión en 10 días."
         ),
-        "color": "#e63946"
+"color": "#e63946"
     }
 }
 
@@ -387,39 +387,70 @@ def cargar_artefactos():
     ).squeeze()
     return pipeline, scaler, columnas_X, medias_X
 
-def construir_vector_entrada(valores_usuario: dict, columnas_X: list, medias_X: pd.Series) -> pd.DataFrame:
-    """Construye un DataFrame de 1 fila con exactamente las columnas de columnas_X."""
-    fila = medias_X.copy()
+def construir_vector_entrada(valores_usuario: dict, columnas_X: list, df_stats: dict) -> pd.DataFrame:
+    """Construye un DataFrame de 1 fila con exactamente las columnas de columnas_X.
+    Los valores de los sliders se escalan a la misma escala del dataset de entrenamiento.
+    """
+    fila = pd.Series(0.0, index=columnas_X)
     
-    mapa_features = {
-        'volatilidad_20d': valores_usuario.get('volatilidad_20d'),
-        'momentum_5d': valores_usuario.get('momentum_5d'),
-        'delta_vix': valores_usuario.get('delta_vix'),
-        'correlacion_brent_30d': valores_usuario.get('correlacion_brent_30d'),
-        'CAR_pre_evento': valores_usuario.get('car_pre_evento'),
+    vol = valores_usuario.get('volatilidad_20d', 0.02)
+    mom = valores_usuario.get('momentum_5d', 0.0)
+    vix_nivel = valores_usuario.get('delta_vix', 0.0)
+    corr = valores_usuario.get('correlacion_brent_30d', 0.0)
+    car = valores_usuario.get('car_pre_evento', 0.0)
+    sector = valores_usuario.get('sector', 'energía')
+    
+    mapeo_activos = {
+        "energía":     ["BRENT", "WTI", "EXXON", "CHEVRON"],
+        "índice":      ["SP500", "BOVESPA", "MERVAL"],
+        "divisa":      ["USD_COP"],
+        "metal":       ["GOLD", "COPPER"],
+        "volatilidad": ["VIX"],
     }
     
-    for col, val in mapa_features.items():
-        if col in fila.index and val is not None:
-            fila[col] = val
+    activos = mapeo_activos.get(sector, ["BRENT", "WTI"])
     
-    if 'sector' in columnas_X:
-        fila['sector'] = valores_usuario.get('sector', fila.get('sector', 0))
+    for col in activos:
+        if col in fila.index:
+            if col in df_stats and 'std' in df_stats[col]:
+                fila[col] = vol / df_stats[col]['std']
+            else:
+                fila[col] = vol
     
-    X_entrada = pd.DataFrame([fila])[columnas_X]
+    for col in activos:
+        if col in fila.index and col in df_stats and 'std' in df_stats[col]:
+            fila[col] = (fila[col] + mom / df_stats[col]['std']) / 2 if fila[col] != 0 else mom / df_stats[col]['std']
+    
+    if "VIX" in fila.index:
+        if "VIX" in df_stats and 'std' in df_stats["VIX"]:
+            fila["VIX"] = vix_nivel / df_stats["VIX"]["std"]
+        else:
+            fila["VIX"] = vix_nivel / 0.078
+    
+    if "GOLD" in fila.index and "GOLD" in df_stats and 'std' in df_stats["GOLD"]:
+        fila["GOLD"] = car / df_stats["GOLD"]["std"]
+    elif "GOLD" in fila.index:
+        fila["GOLD"] = car
+    
+    X_entrada = pd.DataFrame([fila.values], columns=columnas_X)
     return X_entrada
 
 def predecir(valores_usuario: dict) -> tuple:
     """Retorna (prob_bajada, prob_subida)."""
-    try:
-        pipeline, scaler, columnas_X, medias_X = cargar_artefactos()
-    except Exception:
-        return 0.5, 0.5
+    pipeline, scaler, columnas_X, medias_X = cargar_artefactos()
     
-    X_entrada = construir_vector_entrada(valores_usuario, columnas_X, medias_X)
+    df = cargar_dataset(RUTAS["dataset"])
+    df_stats = {}
+    if df is not None:
+        cols = [c for c in df.columns if not c.startswith('target_') and c != 'sector' and not c.endswith('_es_outlier') and c != 'ventana_evento']
+        for col in columnas_X:
+            if col in cols:
+                df_stats[col] = {'mean': df[col].mean(), 'std': df[col].std()}
+    
+    X_entrada = construir_vector_entrada(valores_usuario, columnas_X, df_stats)
     X_escalado = pd.DataFrame(scaler.transform(X_entrada), columns=columnas_X)
     
-    if hasattr(pipeline, 'named_steps') and 'scaler' in pipeline.named_steps:
+    if hasattr(pipeline, 'named_steps') and 'modelo' in pipeline.named_steps:
         modelo_solo = pipeline.named_steps['modelo']
         probabilidades = modelo_solo.predict_proba(X_escalado)[0]
     else:
@@ -746,6 +777,7 @@ if ejecutar:
             'sector': sector
         }
         
+        valores_usuario['delta_vix'] = nivel_vix - 20
         try:
             prob_bajada, prob_subida = predecir(valores_usuario)
             pred = 1 if prob_subida > 0.5 else 0
