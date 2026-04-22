@@ -16,7 +16,10 @@ __pycache__/
 
 # Datos (no subir datos crudos pesados)
 data/raw/*.csv
-data/processed/*.csv
+data/processed/retornos_diarios.csv
+data/processed/retornos_imputados.csv
+data/processed/precios_diarios.csv
+data/processed/retornos_anormales.csv
 data/processed/profiling_retornos.html
 
 
