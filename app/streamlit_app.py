@@ -884,7 +884,7 @@ col_clust, col_clust_text = st.columns([3, 2])
 
 with col_clust:
     if os.path.exists(RUTAS["cluster_png"]):
-        st.image(RUTAS["cluster_png"], use_container_width=True,
+        st.image(RUTAS["cluster_png"], use_column_width=True,
                  caption="Proyección PCA 2D — Clusters de activos ante el evento Maduro 2026")
     else:
         # Placeholder visual si no existe el gráfico
