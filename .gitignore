@@ -19,8 +19,6 @@ data/raw/*.csv
 data/processed/*.csv
 data/processed/profiling_retornos.html
 
-# Modelo serializado (se genera al correr el notebook)
-models/modelo_final.pkl
 
 # Sistema operativo
 .DS_Store
