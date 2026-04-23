@@ -276,7 +276,8 @@ RUTAS = {
     "scaler":   os.path.join(BASE_DIR, "models", "scaler.pkl"),        # scaler separado si existe
     "dataset":  os.path.join(BASE_DIR, "data", "processed", "dataset_modelamiento.csv"),
     "graficos": os.path.join(BASE_DIR, "data", "processed", "graficos"),
-    "metricas": os.path.join(BASE_DIR, "data", "processed", "comparacion_modelos.csv"),
+    "metricas": os.path.join(BASE_DIR, "data", "processed", "comparacion_modelos_cv.csv"),
+    "metricas_test": os.path.join(BASE_DIR, "data", "processed", "comparacion_modelos_test.csv"),
 }
 RUTAS["cluster_png"]  = os.path.join(RUTAS["graficos"], "clustering_eventos.png")
 RUTAS["roc_png"]      = os.path.join(RUTAS["graficos"], "curvas_roc.png")
@@ -609,10 +610,27 @@ metricas_df         = cargar_metricas(RUTAS["metricas"])
 # Extraer métricas (con valores de respaldo)
 if metricas_df is not None and not metricas_df.empty:
     try:
-        fila_mejor = metricas_df.sort_values("auc", ascending=False).iloc[0]
-        AUC = float(fila_mejor.get("auc", 0.74))
-        F1  = float(fila_mejor.get("f1",  0.68))
-        ACC = float(fila_mejor.get("accuracy", 0.71))
+        # Determinar formato de columnas (viejo: 'auc', nuevo: 'AUC-ROC (mean ± std)')
+        cols = metricas_df.columns.tolist()
+        
+        # Mapeo de columnas antiguas a nuevas
+        if 'auc' in cols:
+            # Formato antiguo
+            fila_mejor = metricas_df.sort_values("auc", ascending=False).iloc[0]
+            AUC = float(fila_mejor.get("auc", 0.74))
+            F1  = float(fila_mejor.get("f1",  0.68))
+            ACC = float(fila_mejor.get("accuracy", 0.71))
+        else:
+            # Formato nuevo: extraer mean de "X (mean ± std)"
+            # Convertir columnas a formato numérico extrayendo el primer número
+            metricas_df['auc_num'] = metricas_df['AUC-ROC (mean ± std)'].astype(str).str.split(' ± ').str[0].astype(float)
+            metricas_df['f1_num']  = metricas_df['F1-Score (mean ± std)'].astype(str).str.split(' ± ').str[0].astype(float)
+            metricas_df['acc_num'] = metricas_df['Accuracy (mean ± std)'].astype(str).str.split(' ± ').str[0].astype(float)
+            
+            fila_mejor = metricas_df.sort_values("auc_num", ascending=False).iloc[0]
+            AUC = float(fila_mejor['auc_num'])
+            F1  = float(fila_mejor['f1_num'])
+            ACC = float(fila_mejor['acc_num'])
     except Exception:
         AUC, F1, ACC = 0.74, 0.68, 0.71
 else:
