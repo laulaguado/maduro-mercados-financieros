@@ -955,7 +955,7 @@ st.markdown("---")
 # =============================================================================
 st.markdown('<div class="section-title">📊 MÉTRICAS DEL MODELO EN PRODUCCIÓN</div>', unsafe_allow_html=True)
 
-LINEA_BASE = 0.60
+LINEA_BASE = 0.50
 col_m1, col_m2, col_m3, col_m4 = st.columns(4)
 
 metricas_info = [
