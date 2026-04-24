@@ -775,7 +775,7 @@ st.markdown('<div class="section-title">🔮 SIMULACIÓN DE PREDICCIÓN</div>', 
 
 col_btn, col_info = st.columns([2, 3])
 with col_btn:
-    ejecutar = st.button("▶ Predecir comportamiento del activo", use_container_width=True)
+    ejecutar = st.button("▶ Predecir comportamiento del activo", )
 with col_info:
     st.markdown("""
     <div style='font-size:0.85rem; color:#7aadca; padding: 0.5rem 0;'>
@@ -862,7 +862,7 @@ if ejecutar:
 
             with col_chart:
                 fig_prob = grafico_probabilidades(prob_subida, prob_bajada)
-                st.pyplot(fig_prob, use_container_width=True)
+                st.pyplot(fig_prob, )
                 plt.close()
 
             # ── Historial de predicciones ──────────────────────────────────
@@ -884,7 +884,7 @@ if ejecutar:
                 [st.session_state["historial"], pred_row], ignore_index=True
             )
             hist_mostrar = st.session_state["historial"].tail(num_filas)
-            st.dataframe(hist_mostrar, use_container_width=True)
+            st.dataframe(hist_mostrar, )
             csv_hist = hist_mostrar.to_csv(index=False).encode("utf-8")
             st.download_button(
                 "⬇️ Descargar historial de predicciones",
@@ -904,7 +904,7 @@ col_clust, col_clust_text = st.columns([3, 2])
 
 with col_clust:
     if os.path.exists(RUTAS["cluster_png"]):
-        st.image(RUTAS["cluster_png"], use_column_width=True,
+        st.image(RUTAS["cluster_png"], ,
                  caption="Proyección PCA 2D — Clusters de activos ante el evento Maduro 2026")
     else:
         # Placeholder visual si no existe el gráfico
@@ -1004,7 +1004,7 @@ with col_m4:
     ax_g.text(np.pi / 2, -0.4, "AUC-ROC", ha="center", va="center",
               fontsize=8, color="#7aadca")
     plt.tight_layout()
-    st.pyplot(fig_gauge, use_container_width=True)
+    st.pyplot(fig_gauge, )
     plt.close()
 
 # Interpretación automática
@@ -1056,11 +1056,20 @@ graficos_disponibles = {k: v for k, v in graficos_extra.items() if os.path.exist
 if graficos_disponibles:
     st.markdown('<div class="section-title">📈 VISUALIZACIONES DEL MODELO</div>',
                 unsafe_allow_html=True)
-    tabs = st.tabs(list(graficos_disponibles.keys()))
-    for tab, (titulo, ruta) in zip(tabs, graficos_disponibles.items()):
-        with tab:
-            st.image(ruta, use_container_width=True)
-    st.markdown("---")
+    
+    # Mostrar imágenes disponibles de forma simple
+    for titulo, ruta_imagen in graficos_disponibles.items():
+        st.markdown(f"**{titulo}**")
+        if os.path.exists(ruta_imagen):
+            try:
+                # No usar use_container_width para evitar errores de versión
+                st.image(ruta_imagen)
+            except Exception as e:
+                st.error(f"Error al cargar imagen: {ruta_imagen}")
+                st.caption(f"Verifica que el archivo exista en: {ruta_imagen}")
+        else:
+            st.warning(f"⚠️ Imagen no encontrada: {ruta_imagen}")
+        st.markdown("---")
 
 # =============================================================================
 # DATASET DE REFERENCIA
@@ -1074,10 +1083,10 @@ if df is not None:
                 st.markdown("**Distribución por sector:**")
                 dist = df["sector"].value_counts().reset_index()
                 dist.columns = ["Sector", "Registros"]
-                st.dataframe(dist, use_container_width=True, hide_index=True)
+                st.dataframe(dist, , hide_index=True)
         with col_ds2:
             st.markdown("**Primeras filas del dataset:**")
-            st.dataframe(df.head(8), use_container_width=True)
+            st.dataframe(df.head(8), )
         st.download_button(
             "⬇️ Descargar dataset completo",
             data=df.to_csv(index=True).encode("utf-8"),
