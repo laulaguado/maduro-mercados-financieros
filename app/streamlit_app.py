@@ -281,6 +281,7 @@ RUTAS = {
 }
 RUTAS["cluster_png"]  = os.path.join(RUTAS["graficos"], "clustering_eventos.png")
 RUTAS["roc_png"]      = os.path.join(RUTAS["graficos"], "violin_auc_roc.png")
+RUTAS["auc_roc_png"]  = os.path.join(RUTAS["graficos"], "curva_roc_auc.png")
 RUTAS["imp_vars_png"] = os.path.join(RUTAS["graficos"], "importancia_variables.png")
 
 # Descripciones de clusters por sector
@@ -1017,6 +1018,8 @@ interpretaciones = [
     ("Accuracy", ACC, f"El modelo clasificó correctamente el {ACC*100:.0f}% de los días "
      f"del conjunto de prueba (30% del total), {'superando' if ACC > LINEA_BASE else 'cerca de'} "
      f"la línea base de referencia de {LINEA_BASE*100:.0f}%."),
+    ("Error del Modelo", error_pct, f"El modelo clasifica incorrectamente el {error_pct:.1f}% de los casos. "
+     f"Esto significa que 1 de cada {100/error_pct:.0f} predicciones será errónea."),
 ]
 for col, (nombre, valor, interp) in zip([col_int1, col_int2, col_int3], interpretaciones):
     with col:
