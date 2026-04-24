@@ -280,7 +280,7 @@ RUTAS = {
     "metricas_test": os.path.join(BASE_DIR, "data", "processed", "comparacion_modelos_test.csv"),
 }
 RUTAS["cluster_png"]  = os.path.join(RUTAS["graficos"], "clustering_eventos.png")
-RUTAS["roc_png"]      = os.path.join(RUTAS["graficos"], "curvas_roc.png")
+RUTAS["roc_png"]      = os.path.join(RUTAS["graficos"], "violin_auc_roc.png")
 RUTAS["imp_vars_png"] = os.path.join(RUTAS["graficos"], "importancia_variables.png")
 
 # Descripciones de clusters por sector
