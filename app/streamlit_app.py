@@ -1082,10 +1082,10 @@ if df is not None:
                 st.markdown("**Distribución por sector:**")
                 dist = df["sector"].value_counts().reset_index()
                 dist.columns = ["Sector", "Registros"]
-                st.dataframe(dist, , hide_index=True)
+                st.dataframe(dist, hide_index=True)
         with col_ds2:
             st.markdown("**Primeras filas del dataset:**")
-            st.dataframe(df.head(8), )
+            st.dataframe(df.head(8))
         st.download_button(
             "⬇️ Descargar dataset completo",
             data=df.to_csv(index=True).encode("utf-8"),
