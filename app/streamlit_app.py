@@ -607,16 +607,8 @@ if metricas_df is not None and not metricas_df.empty:
         # Determinar formato de columnas (viejo: 'auc', nuevo: 'AUC-ROC (mean ± std)')
         cols = metricas_df.columns.tolist()
         
-        # Mapeo de columnas antiguas a nuevas
-        if 'auc' in cols:
-            # Formato antiguo
-            fila_mejor = metricas_df.sort_values("auc", ascending=False).iloc[0]
-            AUC = float(fila_mejor.get("auc", 0.74))
-            F1  = float(fila_mejor.get("f1",  0.68))
-            ACC = float(fila_mejor.get("accuracy", 0.71))
-        else:
-            # Formato nuevo: extraer mean de "X (mean ± std)"
-            # Convertir columnas a formato numérico extrayendo el primer número
+        # Formato nuevo: extraer mean de "X (mean ± std)"
+        if 'AUC-ROC (mean ± std)' in cols:
             metricas_df['auc_num'] = metricas_df['AUC-ROC (mean ± std)'].astype(str).str.split(' ± ').str[0].astype(float)
             metricas_df['f1_num']  = metricas_df['F1-Score (mean ± std)'].astype(str).str.split(' ± ').str[0].astype(float)
             metricas_df['acc_num'] = metricas_df['Accuracy (mean ± std)'].astype(str).str.split(' ± ').str[0].astype(float)
@@ -625,10 +617,16 @@ if metricas_df is not None and not metricas_df.empty:
             AUC = float(fila_mejor['auc_num'])
             F1  = float(fila_mejor['f1_num'])
             ACC = float(fila_mejor['acc_num'])
-        except Exception:
-            AUC, F1, ACC = 0.5970, 0.6598, 0.5879
-    else:
+        else:
+            # Formato antiguo
+            fila_mejor = metricas_df.sort_values("auc", ascending=False).iloc[0]
+            AUC = float(fila_mejor.get("auc", 0.5970))
+            F1  = float(fila_mejor.get("f1",  0.6598))
+            ACC = float(fila_mejor.get("accuracy", 0.5879))
+    except Exception:
         AUC, F1, ACC = 0.5970, 0.6598, 0.5879
+else:
+    AUC, F1, ACC = 0.5970, 0.6598, 0.5879
 
 # =============================================================================
 # SECCIÓN 1 — ENCABEZADO
