@@ -625,10 +625,10 @@ if metricas_df is not None and not metricas_df.empty:
             AUC = float(fila_mejor['auc_num'])
             F1  = float(fila_mejor['f1_num'])
             ACC = float(fila_mejor['acc_num'])
-    except Exception:
-        AUC, F1, ACC = 0.74, 0.68, 0.71
-else:
-    AUC, F1, ACC = 0.74, 0.68, 0.71
+        except Exception:
+            AUC, F1, ACC = 0.5970, 0.6598, 0.5879
+    else:
+        AUC, F1, ACC = 0.5970, 0.6598, 0.5879
 
 # =============================================================================
 # SECCIÓN 1 — ENCABEZADO
