@@ -26,7 +26,7 @@ from sklearn.pipeline import Pipeline
 from xgboost import XGBClassifier
 from imblearn.over_sampling import SMOTE
 from scipy import stats
-import statsmodels.stats.multicomp as mc
+from statsmodels.stats.multicomp import pairwise_tukeyhsd
 from skopt import BayesSearchCV
 from skopt.space import Real, Integer, Categorical
 import joblib
@@ -331,10 +331,10 @@ def entrenar_con_validacion_cruzada(X_train, y_train, n_folds=10):
 
 def aplicar_anova_tukey(resultados_cv):
     """
-    Aplica ANOVA y test de Tukey para comparar modelos.
+    Aplica ANOVA y test de Tukey para comparar modelos usando AUC de cada fold.
     
     Args:
-        resultados_cv (dict): Resultados de validación cruzada.
+        resultados_cv (dict): Resultados de validación cruzada con 'auc' por fold.
     
     Returns:
         list: Lista con los 3 mejores modelos por AUC-ROC promedio.
@@ -344,76 +344,69 @@ def aplicar_anova_tukey(resultados_cv):
         >>> print(mejores_modelos)
     """
     print("\n" + "="*80)
-    print("COMPARACIÓN ESTADÍSTICA DE MODELOS (ANOVA + TUKEY)")
+    print("COMPARACIÓN ESTADÍSTICA DE MODELOS (ANOVA + TUKEY HSD)")
     print("="*80)
     
-    # Extraer AUC-ROC por fold de cada modelo
-    aucs_por_modelo = {}
+    # Extraer AUC por fold de cada modelo
+    auc_por_modelo = []
+    nombres_modelos = []
+    
     for nombre_modelo, res in resultados_cv.items():
-        aucs_por_modelo[nombre_modelo] = res['auc']
+        aucs = res['auc']  # Lista de AUCs por fold
+        auc_por_modelo.extend(aucs)
+        nombres_modelos.extend([nombre_modelo] * len(aucs))
     
-    # Preparar datos para ANOVA
-    modelo_nombres = []
-    auc_valores = []
-    
-    for nombre_modelo, aucs in aucs_por_modelo.items():
-        for auc in aucs:
-            modelo_nombres.append(nombre_modelo)
-            auc_valores.append(auc)
-    
-    # Crear DataFrame
     df_anova = pd.DataFrame({
-        'modelo': modelo_nombres,
-        'auc': auc_valores
+        'modelo': nombres_modelos,
+        'auc': auc_por_modelo
     })
     
-    # Aplicar ANOVA
-    modelos = df_anova['modelo'].unique()
-    grupos = [df_anova.loc[df_anova['modelo'] == modelo, 'auc'].values for modelo in modelos]
+    # ANOVA: comparar medias entre todos los modelos
+    modelos_unicos = df_anova['modelo'].unique()
+    grupos = [df_anova.loc[df_anova['modelo'] == m, 'auc'].values for m in modelos_unicos]
     
     f_stat, p_valor = stats.f_oneway(*grupos)
     
-    print(f"\nResultados ANOVA:")
+    print("\nResultados ANOVA:")
     print(f"F-estadístico: {f_stat:.4f}")
     print(f"p-valor: {p_valor:.4f}")
     
-    # Aplicar Tukey HSD si ANOVA es significativo
     if p_valor < 0.05:
-        print("\np-valor < 0.05: Existen diferencias significativas entre modelos")
-        print("\nAplicando test de Tukey HSD...")
+        print("\nInterpretación: El p-valor (< 0.05) indica que existen diferencias "
+              "estadísticamente significativas entre al menos algunos de los modelos "
+              "en términos de AUC-ROC. Se aplica el test de Tukey HSD para identificar "
+              "qué pares de modelos difieren.")
         
-        # Aplicar Tukey
-        tukey = mc.MultiComparison(df_anova['auc'], df_anova['modelo'])
-        resultado_tukey = tukey.tukeyhsd()
+        print("\n" + "="*80)
+        print("TEST DE TUKEY HSD (comparaciones múltiples)")
+        print("="*80)
         
-        # Imprimir resultados
-        print("\nResultados Tukey HSD:")
-        print(resultado_tukey)
+        tukey = pairwise_tukeyhsd(
+            endog=df_anova['auc'],
+            groups=df_anova['modelo'],
+            alpha=0.05
+        )
+        print(tukey)
         
-        # Identificar pares significativamente diferentes
-        pares_sig = []
-        for i, p in enumerate(resultado_tukey.pvalues):
-            if p < 0.05:
-                par = (resultado_tukey.groupsunique[resultado_tukey.data[i, 0]],
-                       resultado_tukey.groupsunique[resultado_tukey.data[i, 1]])
-                pares_sig.append(par)
-        
-        if pares_sig:
-            print("\nPares con diferencias estadísticamente significativas:")
-            for par in pares_sig:
-                print(f"- {par[0]} vs {par[1]}")
-        else:
-            print("\nNo se encontraron pares con diferencias estadísticamente significativas")
+        # Mostrar medias por modelo
+        print("\n" + "="*80)
+        print("MEDIAS DE AUC-ROC POR MODELO")
+        print("="*80)
+        medias_auc = df_anova.groupby('modelo')['auc'].agg(['mean', 'std']).sort_values('mean', ascending=False)
+        print(medias_auc.round(4))
     else:
-        print("\np-valor >= 0.05: No hay evidencia suficiente para afirmar diferencias entre modelos")
+        print("\nInterpretación: El p-valor (>= 0.05) no permite rechazar la hipótesis nula; "
+              "no hay evidencia suficiente de diferencias significativas entre los modelos.")
     
-    # Seleccionar los 3 mejores modelos por AUC-ROC promedio
+    # Seleccionar los 3 mejores por AUC promedio
     auc_promedios = {nombre: res['auc_mean'] for nombre, res in resultados_cv.items()}
     mejores_3 = sorted(auc_promedios.items(), key=lambda x: x[1], reverse=True)[:3]
     
-    print("\nLos 3 mejores modelos por AUC-ROC promedio:")
-    for i, (nombre, auc) in enumerate(mejores_3):
-        print(f"{i+1}. {nombre}: {auc:.4f}")
+    print("\n" + "="*80)
+    print("LOS 3 MEJORES MODELOS SELECCIONADOS")
+    print("="*80)
+    for i, (nombre, auc) in enumerate(mejores_3, 1):
+        print(f"  {i}. {nombre}: AUC-ROC = {auc:.4f}")
     
     return [nombre for nombre, _ in mejores_3]
 
