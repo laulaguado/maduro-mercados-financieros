@@ -628,6 +628,9 @@ if metricas_df is not None and not metricas_df.empty:
 else:
     AUC, F1, ACC = 0.5970, 0.6598, 0.5879
 
+# Calcular porcentaje de error del modelo (después de que ACC esté definido)
+error_pct = (1 - ACC) * 100
+ 
 # =============================================================================
 # SECCIÓN 1 — ENCABEZADO
 # =============================================================================
