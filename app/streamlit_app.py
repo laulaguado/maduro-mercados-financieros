@@ -759,7 +759,7 @@ with st.sidebar:
         <b>Modelo:</b> {'✅' if os.path.exists(RUTAS['modelo']) else '❌'} models/modelo_final.pkl<br>
         <b>Scaler:</b> {'✅' if os.path.exists(RUTAS['scaler']) else '⬜'} models/scaler.pkl<br>
         <b>Dataset:</b> {'✅' if os.path.exists(RUTAS['dataset']) else '❌'} data/processed/dataset_modelamiento.csv<br>
-        <b>Métricas:</b> {'✅' if os.path.exists(RUTAS['metricas']) else '⬜'} data/processed/comparacion_modelos.csv<br>
+         <b>Métricas (CV):</b> {'✅' if os.path.exists(RUTAS['metricas']) else '⬜'} data/processed/comparacion_modelos_cv.csv<br>
         <b>Cluster PNG:</b> {'✅' if os.path.exists(RUTAS['cluster_png']) else '⬜'} graficos/clustering_eventos.png<br>
         </div>
         """, unsafe_allow_html=True)
