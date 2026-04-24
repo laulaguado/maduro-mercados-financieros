@@ -904,8 +904,7 @@ col_clust, col_clust_text = st.columns([3, 2])
 
 with col_clust:
     if os.path.exists(RUTAS["cluster_png"]):
-        st.image(RUTAS["cluster_png"], caption="Proyección PCA 2D — Clusters de activos ante el evento Maduro 2026")
-                 caption="Proyección PCA 2D — Clusters de activos ante el evento Maduro 2026")
+        st.image(RUTAS["cluster_png"], caption="Proyección PCA2D — Clusters de activos ante el evento Maduro 2026")
     else:
         # Placeholder visual si no existe el gráfico
         st.markdown("""
