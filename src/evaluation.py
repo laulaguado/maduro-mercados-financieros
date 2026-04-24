@@ -35,7 +35,7 @@ plt.style.use('seaborn-v0_8-darkgrid')
 sns.set(font_scale=1.2)
 
 
-def calcular_metricas_completas(modelo, X_test, y_test, nombre_modelo):
+def calcular_metricas_completas(modelo, X_test, y_test, nombre_modelo, y_pred=None):
     """
     Calcula métricas completas de evaluación para un modelo.
     
@@ -44,6 +44,8 @@ def calcular_metricas_completas(modelo, X_test, y_test, nombre_modelo):
         X_test (pandas.DataFrame): Features de prueba.
         y_test (pandas.Series): Variable objetivo de prueba.
         nombre_modelo (str): Nombre del modelo.
+        y_pred (numpy.array, optional): Predicciones manuales. Si se pasa,
+            se usa en lugar de recalcular con modelo.predict().
     
     Returns:
         dict: Diccionario con métricas e interpretaciones.
@@ -58,7 +60,10 @@ def calcular_metricas_completas(modelo, X_test, y_test, nombre_modelo):
     
     # Predecir probabilidades y clases
     y_proba = modelo.predict_proba(X_test)[:, 1]
-    y_pred = modelo.predict(X_test)
+    
+    # Usar y_pred externo si se proporciona, sino predecir
+    if y_pred is None:
+        y_pred = modelo.predict(X_test)
     
     # Calcular métricas
     auc = roc_auc_score(y_test, y_proba)
