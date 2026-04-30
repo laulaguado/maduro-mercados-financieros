@@ -433,7 +433,24 @@ def construir_vector_entrada(valores_usuario: dict, columnas_X: list, df_stats: 
         fila["GOLD"] = car / df_stats["GOLD"]["std"]
     elif "GOLD" in fila.index:
         fila["GOLD"] = car
-    
+
+    # Nuevas features técnicas agregadas
+    rsi_val = valores_usuario.get('rsi', 50.0)
+    for col in fila.index:
+        if col.endswith('_rsi'):
+            fila[col] = rsi_val
+
+    dxy_val = valores_usuario.get('dxy', 100.0)
+    if 'DXY' in fila.index:
+        fila['DXY'] = dxy_val
+
+    trend_keywords = ['Maduro', 'Venezuela oil', 'Venezuela crisis', 'Venezuela sanctions']
+    for kw in trend_keywords:
+        col_name = f"{kw}_trend_delta"
+        key_name = f"trend_{kw.replace(' ', '_')}"
+        if col_name in fila.index:
+            fila[col_name] = valores_usuario.get(key_name, 0.0)
+
     X_entrada = pd.DataFrame([fila.values], columns=columnas_X)
     return X_entrada
 
@@ -718,6 +735,32 @@ with st.sidebar:
         help="Retorno Anormal Acumulado en la ventana pre-evento [-5, -1] días"
     )
 
+    st.markdown("**Nuevas features técnicas (modelo mejorado)**")
+
+    rsi_input = st.slider(
+        "RSI (0-100)",
+        min_value=0, max_value=100,
+        value=50, step=1,
+        help="Índice de Fuerza Relativa (RSI) — 30=sobreventa, 70=sobrecompra"
+    )
+
+    dxy_input = st.slider(
+        "DXY (índice dólar)",
+        min_value=80.0, max_value=120.0,
+        value=100.0, step=0.5,
+        help="Índice del dólar estadounidense (DXY)"
+    )
+
+    st.markdown("**Google Trends (delta diario)**")
+    trend_maduro = st.slider("Trend: Maduro", -10.0, 10.0, 0.0, step=0.5,
+                             help="Cambio diario en índice de búsqueda 'Maduro'")
+    trend_venezuela_oil = st.slider("Trend: Venezuela oil", -10.0, 10.0, 0.0, step=0.5,
+                             help="Cambio diario en índice 'Venezuela oil'")
+    trend_venezuela_crisis = st.slider("Trend: Venezuela crisis", -10.0, 10.0, 0.0, step=0.5,
+                             help="Cambio diario en índice 'Venezuela crisis'")
+    trend_venezuela_sanciones = st.slider("Trend: Venezuela sanctions", -10.0, 10.0, 0.0, step=0.5,
+                             help="Cambio diario en índice 'Venezuela sanctions'")
+
     st.markdown("---")
     st.markdown("### 📁 Datos opcionales")
     subir_dataset = st.file_uploader(
@@ -791,13 +834,17 @@ if ejecutar:
         valores_usuario = {
             'volatilidad_20d': vol_20d,
             'momentum_5d': mom_5d,
-            'delta_vix': nivel_vix,
+            'delta_vix': nivel_vix - 20,
             'correlacion_brent_30d': corr_brent,
             'car_pre_evento': car_pre,
-            'sector': sector
+            'sector': sector,
+            'rsi': rsi_input,
+            'dxy': dxy_input,
+            'trend_maduro': trend_maduro,
+            'trend_venezuela_oil': trend_venezuela_oil,
+            'trend_venezuela_crisis': trend_venezuela_crisis,
+            'trend_venezuela_sanciones': trend_venezuela_sanciones,
         }
-        
-        valores_usuario['delta_vix'] = nivel_vix - 20
         try:
             prob_bajada, prob_subida = predecir(valores_usuario)
             pred = 1 if prob_subida > 0.5 else 0

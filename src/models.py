@@ -45,92 +45,180 @@ logger = logging.getLogger(__name__)
 plt.style.use('seaborn-v0_8-darkgrid')
 sns.set(font_scale=1.2)
 
-# Configuración global de los modelos
+# Configuración global de los modelos (actualizados con mejores defaults)
 MODELOS = {
-    'arbol_decision': DecisionTreeClassifier(random_state=42),
-    'knn': KNeighborsClassifier(),
-    'svm': SVC(probability=True, random_state=42),
-    'red_neuronal': MLPClassifier(random_state=42, max_iter=500),
-    'random_forest': RandomForestClassifier(random_state=42),
-    'xgboost': XGBClassifier(random_state=42, eval_metric='logloss'),
-    'gradient_boosting': GradientBoostingClassifier(random_state=42)
+    'arbol_decision': DecisionTreeClassifier(
+        max_depth=10,
+        min_samples_split=5,
+        min_samples_leaf=2,
+        random_state=42,
+        class_weight='balanced'  # Manejo de desbalance
+    ),
+
+    'knn': KNeighborsClassifier(
+        n_neighbors=5,
+        weights='distance',  # Ponderación por distancia (ayuda con desbalance)
+        metric='euclidean',
+        n_jobs=-1
+    ),
+
+    'svm': SVC(
+        C=1.0,
+        kernel='rbf',
+        gamma='scale',
+        probability=True,
+        random_state=42,
+        class_weight='balanced'  # Manejo de desbalance
+    ),
+
+    'red_neuronal': MLPClassifier(
+        hidden_layer_sizes=(100, 50),
+        activation='relu',
+        solver='adam',
+        alpha=0.001,
+        learning_rate='adaptive',
+        learning_rate_init=0.001,
+        max_iter=500,
+        random_state=42,
+        early_stopping=True
+        # MLP no soporta class_weight
+    ),
+
+    'random_forest': RandomForestClassifier(
+        n_estimators=500,  # Aumentado para mejor rendimiento
+        max_depth=None,
+        min_samples_split=2,
+        min_samples_leaf=1,
+        max_features='sqrt',
+        random_state=42,
+        n_jobs=-1,
+        class_weight='balanced'  # Manejo de desbalance
+    ),
+
+    'xgboost': XGBClassifier(
+        n_estimators=100,
+        max_depth=3,
+        learning_rate=0.1,
+        subsample=0.8,
+        colsample_bytree=0.8,
+        objective='binary:logistic',
+        eval_metric='logloss',
+        random_state=42,
+        n_jobs=-1,
+        scale_pos_weight=1  # Ajustar según ratio de clases
+    ),
+
+    'gradient_boosting': GradientBoostingClassifier(
+        n_estimators=100,
+        learning_rate=0.1,
+        max_depth=3,
+        subsample=0.8,
+        random_state=42
+        # GradientBoosting no tiene class_weight; subsample ayuda con desbalance
+    )
 }
 
-# Grids de hiperparámetros para GridSearchCV
+# Grids de hiperparámetros para GridSearchCV (actualizados con class_weight)
 GRIDS_HIPERPARAMETROS = {
     'arbol_decision': {
-        'max_depth': [3, 5, 7, 10],
+        'max_depth': [3, 5, 7, 10, None],
         'min_samples_split': [2, 5, 10],
-        'criterion': ['gini', 'entropy']
+        'min_samples_leaf': [1, 2, 4],
+        'criterion': ['gini', 'entropy'],
+        'class_weight': ['balanced', None]  # Agregado
     },
     'knn': {
         'n_neighbors': [3, 5, 7, 11, 15],
+        'weights': ['uniform', 'distance'],  # Agregado distance
         'metric': ['euclidean', 'manhattan']
     },
     'svm': {
         'C': [0.1, 1, 10, 100],
         'kernel': ['rbf', 'linear'],
-        'gamma': ['scale', 'auto']
+        'gamma': ['scale', 'auto'],
+        'class_weight': ['balanced', None]  # Agregado
     },
     'red_neuronal': {
         'hidden_layer_sizes': [(50,), (100,), (100, 50)],
         'activation': ['relu', 'tanh'],
-        'learning_rate_init': [0.001, 0.01]
+        'learning_rate_init': [0.0001, 0.001, 0.01],
+        'alpha': [0.0001, 0.001, 0.01]  # Agregado regularización
     },
     'random_forest': {
-        'n_estimators': [100, 200],
-        'max_depth': [5, 10, None],
-        'max_features': ['sqrt', 'log2']
+        'n_estimators': [100, 300, 500],  # Aumentado rango
+        'max_depth': [5, 10, 15, None],
+        'max_features': ['sqrt', 'log2', None],
+        'min_samples_split': [2, 5, 10],
+        'class_weight': ['balanced', 'balanced_subsample', None]  # Agregado
     },
     'xgboost': {
-        'n_estimators': [100, 200],
-        'learning_rate': [0.05, 0.1, 0.2],
-        'max_depth': [3, 5, 7]
+        'n_estimators': [100, 200, 500],
+        'max_depth': [2, 5, 7],
+        'learning_rate': [0.01, 0.05, 0.1],
+        'subsample': [0.6, 0.8, 1.0],
+        'colsample_bytree': [0.6, 0.8, 1.0],
+        'scale_pos_weight': [1, 2]  # Agregado para desbalance
     },
     'gradient_boosting': {
-        'n_estimators': [100, 200],
-        'learning_rate': [0.05, 0.1],
-        'max_depth': [3, 5]
+        'n_estimators': [100, 200, 500],
+        'learning_rate': [0.01, 0.05, 0.1],
+        'max_depth': [3, 5, 7],
+        'subsample': [0.6, 0.8, 1.0]
+        # No tiene class_weight
     }
 }
 
-# Espacios de búsqueda para BayesSearchCV
+# Espacios de búsqueda para BayesSearchCV (actualizados con class_weight)
 ESPACIOS_BAYES = {
     'arbol_decision': {
-        'max_depth': Integer(2, 15),
+        'max_depth': Integer(2, 20),
         'min_samples_split': Integer(2, 20),
-        'criterion': Categorical(['gini', 'entropy'])
+        'min_samples_leaf': Integer(1, 10),
+        'criterion': Categorical(['gini', 'entropy']),
+        'class_weight': Categorical(['balanced', None])  # Agregado
     },
     'knn': {
-        'n_neighbors': Integer(1, 20),
-        'metric': Categorical(['euclidean', 'manhattan', 'minkowski'])
+        'n_neighbors': Integer(1, 30),
+        'metric': Categorical(['euclidean', 'manhattan', 'minkowski']),
+        'weights': Categorical(['uniform', 'distance'])  # Agregado
     },
     'svm': {
-        'C': Real(0.01, 100, prior='log-uniform'),
+        'C': Real(0.01, 1000, prior='log-uniform'),
         'kernel': Categorical(['rbf', 'linear']),
-        'gamma': Real(0.001, 10, prior='log-uniform')
+        'gamma': Real(0.0001, 10, prior='log-uniform'),
+        'class_weight': Categorical(['balanced', None])  # Agregado
     },
     'red_neuronal': {
-        'hidden_layer_sizes': Categorical([(50,), (100,), (50, 50), (100, 50)]),
+        'hidden_layer_sizes': Categorical([(50,), (100,), (50, 50), (100, 50), (100, 100)]),
         'activation': Categorical(['relu', 'tanh']),
-        'learning_rate_init': Real(0.0001, 0.1, prior='log-uniform')
+        'learning_rate_init': Real(0.0001, 0.1, prior='log-uniform'),
+        'alpha': Real(0.00001, 0.01, prior='log-uniform'),  # L2 regularization
+        'solver': Categorical(['adam', 'sgd'])  # Agregado
     },
     'random_forest': {
-        'n_estimators': Integer(50, 300),
-        'max_depth': Integer(3, 15),
-        'max_features': Categorical(['sqrt', 'log2', None])
+        'n_estimators': Integer(50, 500),  # Aumentado máximo a 500
+        'max_depth': Integer(3, 20),
+        'max_features': Categorical(['sqrt', 'log2', None]),
+        'min_samples_split': Integer(2, 10),
+        'min_samples_leaf': Integer(1, 5),
+        'class_weight': Categorical(['balanced', 'balanced_subsample', None])  # Agregado
     },
     'xgboost': {
-        'n_estimators': Integer(50, 300),
-        'learning_rate': Real(0.01, 0.3, prior='log-uniform'),
+        'n_estimators': Integer(50, 500),
         'max_depth': Integer(2, 10),
-        'subsample': Real(0.5, 1.0)
+        'learning_rate': Real(0.001, 0.3, prior='log-uniform'),
+        'subsample': Real(0.5, 1.0),
+        'colsample_bytree': Real(0.5, 1.0),
+        'scale_pos_weight': Integer(1, 3)  # Agregado para desbalance
     },
     'gradient_boosting': {
-        'n_estimators': Integer(50, 300),
-        'learning_rate': Real(0.01, 0.3, prior='log-uniform'),
+        'n_estimators': Integer(50, 500),
+        'learning_rate': Real(0.001, 0.3, prior='log-uniform'),
         'max_depth': Integer(2, 10),
-        'subsample': Real(0.5, 1.0)
+        'subsample': Real(0.5, 1.0),
+        'min_samples_split': Integer(2, 10),
+        'min_samples_leaf': Integer(1, 5)
+        # No class_weight disponible
     }
 }
 
@@ -177,47 +265,106 @@ def dividir_datos(X, y, test_size=0.30, random_state=42):
 
 def aplicar_smote_si_necesario(X_train, y_train, umbral_desbalance=0.40):
     """
-    Aplica SMOTE si la proporción de la clase minoritaria es menor que el umbral.
-    
+    Aplica SMOTE solo si el desbalance supera el umbral.
+
     Args:
         X_train (pandas.DataFrame): Features de entrenamiento.
-        y_train (pandas.Series): Variable objetivo de entrenamiento.
-        umbral_desbalance (float): Umbral para considerar desbalance.
-    
+        y_train (pandas.Series): Target de entrenamiento.
+        umbral_desbalance (float): Umbral de proporción de clase minoritaria
+            por debajo del cual se aplica SMOTE (default 0.40).
+
     Returns:
-        tuple: (X_train_bal, y_train_bal)
-    
+        tuple: (X_train_bal, y_train_bal) balanceados o originales.
+
     Example:
-        >>> X_train_bal, y_train_bal = aplicar_smote_si_necesario(X_train, y_train)
-        >>> print(pd.Series(y_train_bal).value_counts(normalize=True))
+        >>> X_bal, y_bal = aplicar_smote_si_necesario(X_train, y_train)
+        >>> print(f"Balance: {y_bal.value_counts(normalize=True)}")
     """
     print("\n" + "="*80)
-    print(f"EVALUACIÓN DE BALANCE DE CLASES (UMBRAL={umbral_desbalance})")
+    print("EVALUACIÓN DE BALANCE DE CLASES")
     print("="*80)
-    
-    # Calcular proporción de la clase minoritaria
-    conteo = pd.Series(y_train).value_counts()
-    clase_min = conteo.idxmin()
-    proporcion_min = conteo[clase_min] / len(y_train)
-    
-    print(f"\nProporción de la clase minoritaria ({clase_min}): {proporcion_min:.4f}")
-    
-    # Verificar si se necesita balanceo
-    if proporcion_min < umbral_desbalance:
-        print(f"Proporción < {umbral_desbalance}, aplicando SMOTE...")
-        
-        # Aplicar SMOTE
+
+    # Calcular proporción de clase minoritaria
+    proporciones = y_train.value_counts(normalize=True)
+    prop_minoritaria = proporciones.min()
+
+    print(f"\nProporción de clase minoritaria: {prop_minoritaria:.4f}")
+
+    # Decidir si aplicar SMOTE
+    if prop_minoritaria < umbral_desbalance:
+        print(f"⚠️  Desbalance detectado (>{umbral_desbalance:.2%}). Aplicando SMOTE...")
         smote = SMOTE(random_state=42)
         X_train_bal, y_train_bal = smote.fit_resample(X_train, y_train)
-        
-        # Imprimir distribución después de SMOTE
-        print("\nDistribución de clases después de SMOTE:")
-        print(pd.Series(y_train_bal).value_counts(normalize=True).round(4) * 100)
-        
-        return X_train_bal, y_train_bal
+        print(f"   ✓ Datos balanceados: {X_train_bal.shape}")
+        print(f"   ✓ Nueva distribución:\n{pd.Series(y_train_bal).value_counts(normalize=True).round(4)*100}")
     else:
-        print(f"Proporción >= {umbral_desbalance}, no se requiere balanceo")
-        return X_train, y_train
+        print(f"✓ Clases balanceadas (>{umbral_desbalance:.2%}). No se aplica SMOTE.")
+        X_train_bal, y_train_bal = X_train, y_train
+
+    return X_train_bal, y_train_bal
+
+
+def seleccionar_variables_por_importancia(X, y, umbral=0.01, random_state=42):
+    """
+    Selecciona las variables más importantes usando Random Forest.
+
+    Args:
+        X (pandas.DataFrame): Features.
+        y (pandas.Series): Target.
+        umbral (float): Umbral mínimo de importancia (0-1). Features con
+            importancia acumulada < umbral se descartan (método acumulativo).
+        random_state (int): Semilla para reproducibilidad.
+
+    Returns:
+        tuple: (X_seleccionado, columnas_seleccionadas, importancias_df)
+
+    Example:
+        >>> X_sel, cols, imp = seleccionar_variables_por_importancia(X, y, umbral=0.01)
+        >>> print(f"Seleccionadas: {len(cols)} de {X.shape[1]}")
+    """
+    print("\n" + "="*80)
+    print("SELECCIÓN DE VARIABLES POR IMPORTANCIA")
+    print("="*80)
+
+    # Entrenar Random Forest rápido para obtener importancia
+    rf_selector = RandomForestClassifier(
+        n_estimators=100,
+        max_depth=10,
+        random_state=random_state,
+        n_jobs=-1,
+        class_weight='balanced'
+    )
+
+    rf_selector.fit(X, y)
+
+    # Obtener importancias
+    importancias = rf_selector.feature_importances_
+    df_imp = pd.DataFrame({
+        'feature': X.columns,
+        'importancia': importancias
+    }).sort_values('importancia', ascending=False)
+
+    # Calcular importancia acumulada
+    df_imp['cumsum'] = df_imp['importancia'].cumsum()
+
+    # Seleccionar features que aportan al menos el umbral acumulado
+    # Método: Tomar features hasta alcanzar umbral de importancia acumulada
+    mask = df_imp['cumsum'] <= umbral
+    # Si ninguna llega al umbral, tomar al menos 10 features
+    if mask.sum() < 10:
+        columnas_seleccionadas = df_imp.head(10)['feature'].tolist()
+    else:
+        columnas_seleccionadas = df_imp[mask]['feature'].tolist()
+
+    X_seleccionado = X[columnas_seleccionadas]
+
+    print(f"\nFeatures originales: {X.shape[1]}")
+    print(f"Features seleccionadas (acumulan ≥ {umbral:.1%} importancia): {len(columnas_seleccionadas)}")
+    print(f"\nTop 10 features más importantes:")
+    for i, row in df_imp.head(10).iterrows():
+        print(f"  {row['feature']}: {row['importancia']:.4f} ({row['cumsum']*100:.1f}% acum)")
+
+    return X_seleccionado, columnas_seleccionadas, df_imp
 
 
 def entrenar_con_validacion_cruzada(X_train, y_train, n_folds=10):
