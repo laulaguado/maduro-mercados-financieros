@@ -15,6 +15,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from datetime import datetime, timedelta
 import logging
+import os
 
 # Configuración de logging
 logging.basicConfig(
@@ -178,65 +179,52 @@ def calcular_delta_vix(df_retornos):
 
 def calcular_rsi(df, ventana=14):
     """
-    Calcula el Índice de Fuerza Relativa (RSI) de 14 días para cada activo.
-
+    Calcula el Índice de Fuerza Relativa (RSI) para cada activo.
+    
     Args:
-        df (pandas.DataFrame): DataFrame con retornos logarítmicos.
+        df (pandas.DataFrame): DataFrame con precios o retornos.
         ventana (int): Tamaño de la ventana para el cálculo (default 14).
-
+    
     Returns:
-        pandas.DataFrame: DataFrame con RSI para cada activo ( valor entre 0 y 100).
-
+        pandas.DataFrame: DataFrame con el RSI para cada columna.
+    
     Example:
-        >>> df_rsi = calcular_rsi(df_retornos, ventana=14)
+        >>> df_rsi = calcular_rsi(df_precios, ventana=14)
         >>> print(df_rsi.head())
     """
     print("\n" + "="*80)
     print(f"CALCULANDO RSI (VENTANA {ventana} DÍAS)")
     print("="*80)
-
-    df_rsi = pd.DataFrame(index=df.index)
-
-    for columna in df.columns:
-        # Calcular cambios diarios
-        delta = df[columna].diff()
-
-        # Separar gains y losses
-        gains = delta.clip(lower=0)
-        losses = -delta.clip(upper=0)
-
-        # Calcular medias exponenciales (más común para RSI)
-        avg_gain = gains.ewm(com=ventana-1, adjust=True).mean()
-        avg_loss = losses.ewm(com=ventana-1, adjust=True).mean()
-
-        # Calcular RS y RSI
-        rs = avg_gain / avg_loss
-        rsi = 100 - (100 / (1 + rs))
-
-        df_rsi[f"{columna}_rsi"] = rsi
-
-    # Imprimir resumen
+    
+    delta = df.diff()
+    gains = delta.clip(lower=0)
+    losses = -delta.clip(upper=0)
+    avg_gain = gains.rolling(ventana).mean()
+    avg_loss = losses.rolling(ventana).mean()
+    rs = avg_gain / avg_loss
+    rsi = 100 - (100 / (1 + rs))
+    rsi.columns = [f"{col}_rsi{ventana}" for col in rsi.columns]
+    
     print(f"\nRSI calculado con ventana de {ventana} días")
-    print(f"- Shape: {df_rsi.shape}")
-    print(f"- Primeros valores disponibles desde: {df_rsi.dropna().index[0]}")
-    print(f"- Valores nulos: {df_rsi.isnull().sum().sum()} (primeros {ventana} días)")
-    print(f"- Rango de valores: [{df_rsi.min().min():.2f}, {df_rsi.max().max():.2f}]")
-
-    return df_rsi
+    print(f"- Shape: {rsi.shape}")
+    print(f"- Primeros valores disponibles desde: {rsi.dropna().index[0]}")
+    print(f"- Valores nulos: {rsi.isnull().sum().sum()} (primeros {ventana} días)")
+    print(f"- Rango: [{rsi.min().min():.2f}, {rsi.max().max():.2f}]")
+    
+    return rsi
 
 
 def calcular_bandas_bollinger(df, ventana=20):
     """
-    Calcula la distancia del precio actual a la banda superior de Bollinger
-    en desviaciones estándar (Z-score).
-
+    Calcula la distancia del precio al promedio móvil en desviaciones estándar (Bollinger Z-score).
+    
     Args:
-        df (pandas.DataFrame): DataFrame con precios (close) o retornos.
-        ventana (int): Tamaño de la ventana para la media móvil y desviación.
-
+        df (pandas.DataFrame): DataFrame con precios o retornos.
+        ventana (int): Tamaño de la ventana para el promedio móvil (default 20).
+    
     Returns:
-        pandas.DataFrame: DataFrame con el z-score de la banda superior.
-
+        pandas.DataFrame: DataFrame con el Z-score de Bollinger para cada columna.
+    
     Example:
         >>> df_bb = calcular_bandas_bollinger(df_precios, ventana=20)
         >>> print(df_bb.head())
@@ -244,31 +232,19 @@ def calcular_bandas_bollinger(df, ventana=20):
     print("\n" + "="*80)
     print(f"CALCULANDO BANDAS DE BOLLINGER (VENTANA {ventana} DÍAS)")
     print("="*80)
-
-    df_bb = pd.DataFrame(index=df.index)
-
-    for columna in df.columns:
-        # Calcular media móvil y desviación estándar
-        media_movil = df[columna].rolling(window=ventana).mean()
-        std_movil = df[columna].rolling(window=ventana).std()
-
-        # Banda superior = media + 2*std
-        banda_superior = media_movil + 2 * std_movil
-
-        # Z-score: (precio - media) / std
-        z_score = (df[columna] - media_movil) / std_movil
-
-        df_bb[f"{columna}_bb_zscore"] = z_score
-
-    # Imprimir resumen
+    
+    media = df.rolling(ventana).mean()
+    std = df.rolling(ventana).std()
+    z = (df - media) / std
+    z.columns = [f"{col}_bollinger{ventana}" for col in z.columns]
+    
     print(f"\nBandas de Bollinger calculadas con ventana de {ventana} días")
-    print(f"- Shape: {df_bb.shape}")
-    print(f"- Primeros valores disponibles desde: {df_bb.dropna().index[0]}")
-    print(f"- Valores nulos: {df_bb.isnull().sum().sum()} (primeros {ventana-1} días)")
-    print(f"- Rango de z-score: [{df_bb.min().min():.2f}, {df_bb.max().max():.2f}]")
-    print(f"  (valores > 2 indican precio por encima de banda superior)")
-
-    return df_bb
+    print(f"- Shape: {z.shape}")
+    print(f"- Primeros valores disponibles desde: {z.dropna().index[0]}")
+    print(f"- Valores nulos: {z.isnull().sum().sum()} (primeros {ventana-1} días)")
+    print(f"- Rango Z-score: [{z.min().min():.2f}, {z.max().max():.2f}]")
+    
+    return z
 
 
 def calcular_ratio_volumen(df_volumen, ventana=20):
@@ -315,223 +291,145 @@ def calcular_ratio_volumen(df_volumen, ventana=20):
 
 def calcular_retorno_mensual(df, ventana=21):
     """
-    Calcula el retorno acumulado de los últimos N días hábiles
-    (aproximadamente un mes trading).
-
+    Calcula el retorno acumulado de los últimos N días hábiles (aproximadamente mensual).
+    
     Args:
         df (pandas.DataFrame): DataFrame con retornos logarítmicos.
-        ventana (int): Número de días hábiles (default 21).
-
+        ventana (int): Número de días hábiles para el retorno acumulado (default 21).
+    
     Returns:
-        pandas.DataFrame: DataFrame con retorno acumulado en la ventana.
-
+        pandas.DataFrame: DataFrame con el retorno acumulado.
+    
     Example:
         >>> df_ret_mensual = calcular_retorno_mensual(df_retornos, ventana=21)
         >>> print(df_ret_mensual.head())
     """
     print("\n" + "="*80)
-    print(f"CALCULANDO RETORNO MENSUAL ({ventana} DÍAS HÁBILES)")
+    print(f"CALCULANDO RETORNO MENSUAL (VENTANA {ventana} DÍAS)")
     print("="*80)
-
-    df_ret_mensual = pd.DataFrame(index=df.index)
-
-    for columna in df.columns:
-        # Suma de retornos logarítmicos en la ventana
-        retorno_acum = df[columna].rolling(window=ventana).sum()
-        df_ret_mensual[f"{columna}_ret_{ventana}d"] = retorno_acum
-
-    # Imprimir resumen
+    
+    ret_mensual = df.rolling(ventana).sum()
+    ret_mensual.columns = [f"{col}_ret{ventana}d" for col in ret_mensual.columns]
+    
     print(f"\nRetorno mensual calculado con ventana de {ventana} días")
-    print(f"- Shape: {df_ret_mensual.shape}")
-    print(f"- Primeros valores disponibles desde: {df_ret_mensual.dropna().index[0]}")
-    print(f"- Valores nulos: {df_ret_mensual.isnull().sum().sum()} (primeros {ventana-1} días)")
-    print(f"- Rango de retornos: [{df_ret_mensual.min().min()*100:.2f}%, {df_ret_mensual.max().max()*100:.2f}%]")
-
-    return df_ret_mensual
+    print(f"- Shape: {ret_mensual.shape}")
+    print(f"- Primeros valores disponibles desde: {ret_mensual.dropna().index[0]}")
+    print(f"- Valores nulos: {ret_mensual.isnull().sum().sum()} (primeros {ventana-1} días)")
+    
+    return ret_mensual
 
 
 def agregar_features_macro(df, fecha_inicio, fecha_fin):
     """
-    Descarga y agrega features macroeconómicas al DataFrame.
-
-    Activos descargados desde Yahoo Finance:
-      - DXY (índice del dólar): símbolo 'DX-Y.NYB'
-      - Gas natural: 'NG=F'
-      - Spread 10Y-2Y: ^TNX - ^IRX (ambos son yields de treasuries)
-      - Oro/Petróleo ratio: GC=F / BZ=F
-
+    Descarga indicadores macroeconómicos con yfinance y calcula sus retornos logarítmicos.
+    
+    Indicadores descargados:
+      - DXY (US Dollar Index): 'DX-Y.NYB'
+      - Gas natural (Natural Gas): 'NG=F'
+      - Treasury 10 años: '^TNX'
+      - Treasury 2 años: '^IRX'
+    
+    Calcula additionally el spread 10Y-2Y (diferencia de yields).
+    
     Args:
-        df (pandas.DataFrame): DataFrame con índice de fechas para alinear.
+        df (pandas.DataFrame): DataFrame de referencia para el índice de fechas.
         fecha_inicio (str): Fecha de inicio en formato 'YYYY-MM-DD'.
         fecha_fin (str): Fecha de fin en formato 'YYYY-MM-DD'.
-
+    
     Returns:
-        pandas.DataFrame: DataFrame con retornos logarítmicos de las features macro.
-
-    Note:
-        Los datos se descargan con yfinance. Los nulos se imputan con ffill().
+        pandas.DataFrame: DataFrame con retornos logarítmicos de los indicadores macro
+        y el spread 10Y-2Y. Columnas: DXY, GAS, T10Y, T2Y, spread_10y2y.
+    
+    Example:
+        >>> df_macro = agregar_features_macro(df_retornos, '2020-01-01', '2026-04-30')
+        >>> print(df_macro.head())
     """
     print("\n" + "="*80)
-    print("DESCARGANDO FEATURES MACROECONÓMICAS")
+    print("DESCARGANDO FEATURES MACROECONÓMICAS CON YFINANCE")
     print("="*80)
-
+    print(f"Periodo: {fecha_inicio} a {fecha_fin}")
+    
+    # Intentar importar yfinance
     try:
         import yfinance as yf
     except ImportError:
-        print("ERROR: yfinance no está instalado. Ejecuta: pip install yfinance")
+        print("\n⚠ ERROR: yfinance no está instalado.")
+        print("   Instálelo con: pip install yfinance")
         return pd.DataFrame(index=df.index)
-
-    features_macro = {}
-
-    # 1. DXY - Índice del Dólar
-    print("\n1. Descargando DXY (índice del dólar)...")
-    try:
-        dxy = yf.download('DX-Y.NYB', start=fecha_inicio, end=fecha_fin, progress=False)['Close']
-        features_macro['DXY'] = dxy
-        print(f"   ✓ DXY descargado: {len(dxy)} observaciones")
-    except Exception as e:
-        print(f"   ✗ Error descargando DXY: {e}")
-
-    # 2. Gas Natural
-    print("\n2. Descargando Gas Natural (NG=F)...")
-    try:
-        gas = yf.download('NG=F', start=fecha_inicio, end=fecha_fin, progress=False)['Close']
-        features_macro['GAS'] = gas
-        print(f"   ✓ Gas descargado: {len(gas)} observaciones")
-    except Exception as e:
-        print(f"   ✗ Error descargando Gas: {e}")
-
-    # 3. Spread 10Y-2Y (diferencia de yields)
-    print("\n3. Descargando Treasury yields (^TNX y ^IRX)...")
-    try:
-        tnx = yf.download('^TNX', start=fecha_inicio, end=fecha_fin, progress=False)['Close']
-        irx = yf.download('^IRX', start=fecha_inicio, end=fecha_fin, progress=False)['Close']
-        spread = tnx - irx
-        spread.name = 'SPREAD_10Y2Y'
-        features_macro['SPREAD_10Y2Y'] = spread
-        print(f"   ✓ Spread calculado: {len(spread)} observaciones")
-    except Exception as e:
-        print(f"   ✗ Error descargando spreads: {e}")
-
-    # 4. Oro/Petróleo ratio
-    print("\n4. Descargando Oro (GC=F) y Petróleo (BZ=F)...")
-    try:
-        oro = yf.download('GC=F', start=fecha_inicio, end=fecha_fin, progress=False)['Close']
-        brent = yf.download('BZ=F', start=fecha_inicio, end=fecha_fin, progress=False)['Close']
-        ratio = oro / brent
-        ratio.name = 'ORO_BRENT_RATIO'
-        features_macro['ORO_BRENT_RATIO'] = ratio
-        print(f"   ✓ Ratio calculado: {len(ratio)} observaciones")
-    except Exception as e:
-        print(f"   ✗ Error calculando ratio Oro/Petróleo: {e}")
-
-    # Combinar todas las features macro en un DataFrame
-    df_macro = pd.DataFrame(features_macro)
-
-    # Calcular retornos logarítmicos
-    df_macro_retornos = np.log(df_macro / df_macro.shift(1))
-
-    # Alinear con el índice de df (usar reindex y ffill)
-    df_macro_retornos = df_macro_retornos.reindex(df.index)
-    df_macro_retornos = df_macro_retornos.ffill().bfill()
-
-    # Imprimir resumen final
-    print(f"\nFeatures macroeconómicas procesadas:")
-    print(f"- Shape: {df_macro_retornos.shape}")
-    print(f"- Columnas: {list(df_macro_retornos.columns)}")
-    print(f"- Valores nulos después de ffill: {df_macro_retornos.isnull().sum().sum()}")
-
-    return df_macro_retornos
+    
+    # Símbolos a descargar
+    simbolos = {
+        'DXY': 'DX-Y.NYB',
+        'GAS': 'NG=F',
+        'T10Y': '^TNX',
+        'T2Y': '^IRX'
+    }
+    
+    datos = {}
+    for nombre, simbolo in simbolos.items():
+        try:
+            print(f"  Descargando {nombre} ({simbolo})...")
+            serie = yf.download(
+                simbolo,
+                start=fecha_inicio,
+                end=fecha_fin,
+                auto_adjust=True,
+                progress=False
+            )['Close']
+            # Calcular retorno logarítmico diario
+            datos[nombre] = np.log(serie / serie.shift(1))
+            print(f"    ✓ {nombre}: {len(serie)} observaciones")
+        except Exception as e:
+            print(f"    ✗ Error descargando {nombre}: {e}")
+            datos[nombre] = None
+    
+    # Crear DataFrame
+    df_macro = pd.DataFrame(datos, index=df.index)
+    
+    # Calcular spread 10Y-2Y
+    if 'T10Y' in df_macro.columns and 'T2Y' in df_macro.columns:
+        df_macro['spread_10y2y'] = df_macro['T10Y'] - df_macro['T2Y']
+        print(f"  ✓ spread_10y2y calculado")
+    else:
+        print(f"  ⚠ spread_10y2y no calculado (faltan T10Y o T2Y)")
+    
+    # Rellenar datos faltantes
+    n_nulls_antes = df_macro.isnull().sum().sum()
+    df_macro = df_macro.ffill().bfill()
+    n_nulls_despues = df_macro.isnull().sum().sum()
+    
+    print(f"\nFeatures macro generadas:")
+    print(f"- Columnas: {list(df_macro.columns)}")
+    print(f"- Shape: {df_macro.shape}")
+    print(f"- Valores nulos antes de fill: {n_nulls_antes}")
+    print(f"- Valores nulos después de fill: {n_nulls_despues}")
+    
+    return df_macro
 
 
 def agregar_google_trends(df, keywords=None, fecha_inicio=None, fecha_fin=None):
-    """
-    Descarga datos de Google Trends para las keywords especificadas usando pytrends.
-
-    Args:
-        df (pandas.DataFrame): DataFrame con índice de fechas para alinear.
-        keywords (list): Lista de términos de búsqueda (default: temas Venezuela).
-        fecha_inicio (str): Fecha de inicio 'YYYY-MM-DD'.
-        fecha_fin (str): Fecha de fin 'YYYY-MM-DD'.
-
-    Returns:
-        pandas.DataFrame: DataFrame con índice de trends diario (interpolado).
-
-    Note:
-        Los datos de Google Trends son semanales. Se interpolan a diario.
-        Si pytrends falla por rate limiting, se intenta cargar desde
-        data/processed/google_trends.csv. Si no existe, se retorna DataFrame vacío.
-    """
-    print("\n" + "="*80)
-    print("DESCARGANDO GOOGLE TRENDS")
-    print("="*80)
-
-    if keywords is None:
-        keywords = ['Maduro', 'Venezuela oil', 'Venezuela crisis', 'Venezuela sanctions']
-
-    # Ruta para cache de Google Trends
-    ruta_cache = os.path.join('data', 'processed', 'google_trends.csv')
-
-    # Intentar cargar desde cache primero
+    """Google Trends con caché en CSV para evitar rate limiting"""
+    ruta_cache = os.path.join('..', 'data', 'processed', 'google_trends.csv')
     if os.path.exists(ruta_cache):
-        print(f"\nCargando Google Trends desde caché: {ruta_cache}")
         df_trends = pd.read_csv(ruta_cache, index_col=0, parse_dates=True)
-        # Interpolar a diario
-        df_trends_daily = df_trends.reindex(df.index).interpolate(method='linear').ffill().bfill()
-        return df_trends_daily
-
+        df_trends = df_trends.reindex(df.index).ffill().bfill()
+        return df_trends
     try:
         from pytrends.request import TrendReq
-    except ImportError:
-        print("ERROR: pytrends no está instalado. Ejecuta: pip install pytrends")
-        return pd.DataFrame(index=df.index)
-
-    try:
-        # Inicializar pytrends
-        pytrends = TrendReq(hl='es-US', tz=0)
-
-        # Construir payload
-        pytrends.build_payload(keywords, cat=0, timeframe=f'{fecha_inicio} {fecha_fin}', geo='')
-
-        # Obtener datos de interés a lo largo del tiempo
-        data = pytrends.interest_over_time()
-
-        if data.empty:
-            print("   ⚠️ No se obtuvieron datos de Google Trends")
-            return pd.DataFrame(index=df.index)
-
-        print(f"\n✓ Datos de Google Trends descargados: {len(data)} semanas")
-
-        # Renombrar columnas
-        data = data[keywords]  # Solo留下 las keywords
-        data.index = pd.to_datetime(data.index)
-
-        # Guardar en cache
-        os.makedirs(os.path.dirname(ruta_cache), exist_ok=True)
-        data.to_csv(ruta_cache)
-        print(f"   ✓ Datos guardados en caché: {ruta_cache}")
-
-        # Convertir de semanal a diario: interpolar linealmente
-        print("\nConvirtiendo datos semanales a diarios...")
-        data_daily = data.resample('D').interpolate(method='linear')
-        data_daily = data_daily.ffill().bfill()
-
-        # Calcular delta diario (cambio diario en interés)
-        delta_trends = data_daily.diff(1)
-        delta_trends.columns = [f"{col}_trend_delta" for col in delta_trends.columns]
-
-        # Alinear con df
-        delta_trends = delta_trends.reindex(df.index).ffill().bfill()
-
-        print(f"✓ Trends processados: {delta_trends.shape}")
-        print(f"- Columnas: {list(delta_trends.columns)}")
-
-        return delta_trends
-
+        pytrends = TrendReq(hl='en-US', tz=360)
+        pytrends.build_payload(keywords, timeframe=f'{fecha_inicio} {fecha_fin}')
+        df_trends = pytrends.interest_over_time()
+        if not df_trends.empty:
+            df_trends = df_trends.drop(columns=['isPartial'], errors='ignore')
+            df_trends_diario = df_trends.resample('D').interpolate('linear')
+            df_trends_diario = df_trends_diario.reindex(df.index).ffill().bfill()
+            delta_trends = df_trends_diario.diff()
+            delta_trends.columns = [f"trends_delta_{col}" for col in delta_trends.columns]
+            delta_trends.to_csv(ruta_cache)
+            return delta_trends
     except Exception as e:
-        print(f"Error descargando Google Trends: {e}")
-        print(" Continuando sin esta feature...")
-        return pd.DataFrame(index=df.index)
+        print(f"   ⚠️ Google Trends no disponible: {e}")
+    return pd.DataFrame(index=df.index)
 
 
 def calcular_features_interaccion(df):
@@ -539,9 +437,9 @@ def calcular_features_interaccion(df):
     Crea features de interacción entre variables clave.
 
     Features creadas:
-      - volatilidad_x_vix: volatilidad_20d * delta_vix (pánico con alta vol)
-      - momentum_x_brent: momentum_5d * correlacion_brent_30d (activos energéticos en tendencia)
-      - rsi_extremo: 1 si RSI < 30 (sobreventa) o RSI > 70 (sobrecompra), 0 en caso contrario
+      - vol_x_vix: volatilidad_20d de SP500 × DELTA_VIX (pánico con alta vol)
+      - mom_x_brent: momentum_5d de BRENT × retorno_BRENT (activo energético en tendencia)
+      - rsi_extremo_*: 1 si RSI < 30 o RSI > 70 para cada activo
 
     Args:
         df (pandas.DataFrame): DataFrame con features base ya calculadas.
@@ -551,7 +449,7 @@ def calcular_features_interaccion(df):
 
     Example:
         >>> df_interaccion = calcular_features_interaccion(df_features)
-        >>> print(df_interaccion[['volatilidad_x_vix', 'rsi_extremo']].head())
+        >>> print(df_interaccion[['vol_x_vix', 'mom_x_brent']].head())
     """
     print("\n" + "="*80)
     print("CALCULANDO FEATURES DE INTERACCIÓN")
@@ -560,41 +458,39 @@ def calcular_features_interaccion(df):
     df_result = df.copy()
     nuevas_columnas = []
 
-    # 1. volatilidad_x_vix: combina volatilidad propia con cambio en VIX
-    # Buscar columnas de volatilidad (terminan en _vol20)
-    for col in df.columns:
-        if col.endswith('_vol20'):
-            activo = col.replace('_vol20', '')
-            delta_vix_col = 'DELTA_VIX'
-            if delta_vix_col in df.columns:
-                nombre_inter = f"{activo}_vol_x_vix"
-                df_result[nombre_inter] = df[col] * df[delta_vix_col]
-                nuevas_columnas.append(nombre_inter)
+    # 1. vol_x_vix: volatilidad de SP500 × cambio VIX
+    vol_col = 'SP500_vol20'
+    delta_vix_col = 'DELTA_VIX'
+    if vol_col in df.columns and delta_vix_col in df.columns:
+        nombre_inter = 'vol_x_vix'
+        df_result[nombre_inter] = df[vol_col] * df[delta_vix_col]
+        nuevas_columnas.append(nombre_inter)
+        print(f"  ✓ Creada: {nombre_inter}")
+    else:
+        print(f"  ⚠ {nombre_inter}: columnas base no disponibles ({vol_col}, {delta_vix_col})")
 
-    # 2. momentum_x_brent: momentum del activo × su correlación con Brent
-    for col in df.columns:
-        if col.endswith('_mom5'):
-            activo = col.replace('_mom5', '')
-            corr_col = f"{activo}_corr_brent"
-            if corr_col in df.columns:
-                nombre_inter = f"{activo}_mom_x_corr"
-                df_result[nombre_inter] = df[col] * df[corr_col]
-                nuevas_columnas.append(nombre_inter)
+    # 2. mom_x_brent: momentum de BRENT × retorno de BRENT
+    mom_col = 'BRENT_mom5'
+    ret_col = 'BRENT'
+    if mom_col in df.columns and ret_col in df.columns:
+        nombre_inter = 'mom_x_brent'
+        df_result[nombre_inter] = df[mom_col] * df[ret_col]
+        nuevas_columnas.append(nombre_inter)
+        print(f"  ✓ Creada: {nombre_inter}")
+    else:
+        print(f"  ⚠ {nombre_inter}: columnas base no disponibles ({mom_col}, {ret_col})")
 
-    # 3. rsi_extremo: indicator binario de sobrecompra/sobreventa
+    # 3. rsi_extremo para cada activo con RSI
     for col in df.columns:
         if col.endswith('_rsi'):
             activo = col.replace('_rsi', '')
             nombre_extremo = f"{activo}_rsi_extremo"
-            # 1 si RSI < 30 o RSI > 70, 0 en otro caso
             df_result[nombre_extremo] = ((df[col] < 30) | (df[col] > 70)).astype(int)
             nuevas_columnas.append(nombre_extremo)
 
     # Imprimir resumen
-    print(f"\nFeatures de interacción creadas:")
-    print(f"- Nuevas columnas: {len(nuevas_columnas)}")
-    for col in nuevas_columnas:
-        print(f"  • {col}")
+    print(f"\nFeatures de interacción creadas: {len(nuevas_columnas)} columnas")
+    print(f"- Nuevas columnas: {nuevas_columnas}")
     print(f"- Shape resultante: {df_result.shape}")
 
     return df_result
@@ -688,6 +584,7 @@ def calcular_sector(nombre_activo):
 def construir_dataset_modelamiento(df_retornos, df_features):
     """
     Integra retornos y features en un único DataFrame para modelamiento.
+    Incluye retornos lag1 de VIX, BRENT, MERVAL y GOLD como features adicionales.
 
     Args:
         df_retornos (pandas.DataFrame): DataFrame con retornos logarítmicos.
@@ -704,12 +601,24 @@ def construir_dataset_modelamiento(df_retornos, df_features):
     print("CONSTRUYENDO DATASET FINAL PARA MODELAMIENTO")
     print("="*80)
 
-    # Calcular features de interacción a partir de df_features
-    print("\nCalculando features de interacción...")
-    df_features = calcular_features_interaccion(df_features)
+    # Añadir retornos lag1 de VIX, BRENT, MERVAL y GOLD a df_features
+    print("\nAñadiendo retornos lag1 (desfase 1 día)...")
+    activos_lag1 = ['VIX', 'BRENT', 'MERVAL', 'GOLD']
+    for activo in activos_lag1:
+        if activo in df_retornos.columns:
+            col_lag = f"{activo}_lag1"
+            df_features[col_lag] = df_retornos[activo].shift(1)
+            print(f"  ✓ Añadido: {col_lag}")
+        else:
+            print(f"  ⚠ {activo} no disponible en df_retornos")
 
     # Combinar retornos y features
+    print("\nCombinando retornos y features...")
     df_combinado = pd.concat([df_retornos, df_features], axis=1)
+
+    # Calcular features de interacción sobre el dataframe combinado
+    print("\nCalculando features de interacción...")
+    df_combinado = calcular_features_interaccion(df_combinado)
 
     # Añadir columna de sector
     print("\nAsignando sectores a cada activo...")
