@@ -393,7 +393,14 @@ def construir_vector_entrada(valores_usuario: dict, columnas_X: list, df_stats: 
     """Construye un DataFrame de 1 fila con exactamente las columnas de columnas_X.
     Los valores de los sliders se escalan a la misma escala del dataset de entrenamiento.
     """
-    fila = pd.Series(0.0, index=columnas_X)
+    # Inicializar con medias de entrenamiento (defaults)
+    fila_data = {}
+    for col in columnas_X:
+        if col in df_stats and 'mean' in df_stats[col]:
+            fila_data[col] = df_stats[col]['mean']
+        else:
+            fila_data[col] = 0.0
+    fila = pd.Series(fila_data)
     
     vol = valores_usuario.get('volatilidad_20d', 0.02)
     mom = valores_usuario.get('momentum_5d', 0.0)
@@ -435,14 +442,18 @@ def construir_vector_entrada(valores_usuario: dict, columnas_X: list, df_stats: 
         fila["GOLD"] = car
 
     # Nuevas features técnicas agregadas
-    rsi_val = valores_usuario.get('rsi', 50.0)
+    rsi_generic = valores_usuario.get('rsi', 50.0)
+    rsi_brent = valores_usuario.get('rsi_brent', rsi_generic)
     for col in fila.index:
         if col.endswith('_rsi'):
-            fila[col] = rsi_val
+            if col.startswith('BRENT'):
+                fila[col] = rsi_brent
+            else:
+                fila[col] = rsi_generic
 
-    dxy_val = valores_usuario.get('dxy', 100.0)
+    dxy_ret = valores_usuario.get('dxy_retorno', 0.0)
     if 'DXY' in fila.index:
-        fila['DXY'] = dxy_val
+        fila['DXY'] = dxy_ret
 
     trend_keywords = ['Maduro', 'Venezuela oil', 'Venezuela crisis', 'Venezuela sanctions']
     for kw in trend_keywords:
@@ -458,13 +469,20 @@ def predecir(valores_usuario: dict) -> tuple:
     """Retorna (prob_bajada, prob_subida)."""
     pipeline, scaler, columnas_X, medias_X = cargar_artefactos()
     
-    df = cargar_dataset(RUTAS["dataset"])
+    # Construir df_stats usando medias_X (means) y scaler (stds)
+    mean_dict = medias_X.to_dict()
+    std_array = getattr(scaler, 'scale_', None)
+    if std_array is None:
+        std_array = getattr(scaler, 'std_', None)
+    std_dict = {}
+    if std_array is not None and len(std_array) == len(columnas_X):
+        std_dict = dict(zip(columnas_X, std_array))
     df_stats = {}
-    if df is not None:
-        cols = [c for c in df.columns if not c.startswith('target_') and c != 'sector' and not c.endswith('_es_outlier') and c != 'ventana_evento']
-        for col in columnas_X:
-            if col in cols:
-                df_stats[col] = {'mean': df[col].mean(), 'std': df[col].std()}
+    for col in columnas_X:
+        df_stats[col] = {
+            'mean': mean_dict.get(col, 0.0),
+            'std': std_dict.get(col, 1.0)
+        }
     
     X_entrada = construir_vector_entrada(valores_usuario, columnas_X, df_stats)
     X_escalado = pd.DataFrame(scaler.transform(X_entrada), columns=columnas_X)
@@ -738,17 +756,24 @@ with st.sidebar:
     st.markdown("**Nuevas features técnicas (modelo mejorado)**")
 
     rsi_input = st.slider(
-        "RSI (0-100)",
+        "RSI Genérico (0-100)",
         min_value=0, max_value=100,
         value=50, step=1,
         help="Índice de Fuerza Relativa (RSI) — 30=sobreventa, 70=sobrecompra"
     )
 
-    dxy_input = st.slider(
-        "DXY (índice dólar)",
-        min_value=80.0, max_value=120.0,
-        value=100.0, step=0.5,
-        help="Índice del dólar estadounidense (DXY)"
+    rsi_brent_input = st.slider(
+        "RSI Brent (0-100)",
+        min_value=0, max_value=100,
+        value=50, step=1,
+        help="RSI específico para Brent (activo energético)"
+    )
+
+    dxy_retorno_input = st.slider(
+        "Retorno DXY (diario)",
+        min_value=-0.03, max_value=0.03,
+        value=0.0, step=0.001, format="%.3f",
+        help="Retorno logarítmico diario del índice dólar (DXY)"
     )
 
     st.markdown("**Google Trends (delta diario)**")
@@ -839,7 +864,8 @@ if ejecutar:
             'car_pre_evento': car_pre,
             'sector': sector,
             'rsi': rsi_input,
-            'dxy': dxy_input,
+            'rsi_brent': rsi_brent_input,
+            'dxy_retorno': dxy_retorno_input,
             'trend_maduro': trend_maduro,
             'trend_venezuela_oil': trend_venezuela_oil,
             'trend_venezuela_crisis': trend_venezuela_crisis,
