@@ -13,7 +13,7 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
-from sklearn.model_selection import train_test_split, StratifiedKFold, GridSearchCV
+from sklearn.model_selection import train_test_split, StratifiedKFold, RandomizedSearchCV
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.svm import SVC
@@ -288,17 +288,17 @@ def aplicar_smote_si_necesario(X_train, y_train, umbral_desbalance=0.40):
     proporciones = y_train.value_counts(normalize=True)
     prop_minoritaria = proporciones.min()
 
-    print(f"\nProporción de clase minoritaria: {prop_minoritaria:.4f}")
+    print(f"\nProporcion de clase minoritaria: {prop_minoritaria:.4f}")
 
     # Decidir si aplicar SMOTE
     if prop_minoritaria < umbral_desbalance:
-        print(f"⚠️  Desbalance detectado (>{umbral_desbalance:.2%}). Aplicando SMOTE...")
+        print(f"ADVERTENCIA: Desbalance detectado (>{umbral_desbalance:.2%}). Aplicando SMOTE...")
         smote = SMOTE(random_state=42)
         X_train_bal, y_train_bal = smote.fit_resample(X_train, y_train)
-        print(f"   ✓ Datos balanceados: {X_train_bal.shape}")
-        print(f"   ✓ Nueva distribución:\n{pd.Series(y_train_bal).value_counts(normalize=True).round(4)*100}")
+        print(f"   OK: Datos balanceados: {X_train_bal.shape}")
+        print(f"   OK: Nueva distribucion:\n{pd.Series(y_train_bal).value_counts(normalize=True).round(4)*100}")
     else:
-        print(f"✓ Clases balanceadas (>{umbral_desbalance:.2%}). No se aplica SMOTE.")
+        print(f"OK: Clases balanceadas (>{umbral_desbalance:.2%}). No se aplica SMOTE.")
         X_train_bal, y_train_bal = X_train, y_train
 
     return X_train_bal, y_train_bal
@@ -359,7 +359,7 @@ def seleccionar_variables_por_importancia(X, y, umbral=0.01, random_state=42):
     X_seleccionado = X[columnas_seleccionadas]
 
     print(f"\nFeatures originales: {X.shape[1]}")
-    print(f"Features seleccionadas (acumulan ≥ {umbral:.1%} importancia): {len(columnas_seleccionadas)}")
+    print(f"Features seleccionadas (acumulan >= {umbral:.1%} importancia): {len(columnas_seleccionadas)}")
     print(f"\nTop 10 features más importantes:")
     for i, row in df_imp.head(10).iterrows():
         print(f"  {row['feature']}: {row['importancia']:.4f} ({row['cumsum']*100:.1f}% acum)")
@@ -560,7 +560,8 @@ def aplicar_anova_tukey(resultados_cv):
 
 def hiperparametrizar_modelos(X_train, y_train, mejores_3_modelos):
     """
-    Optimiza hiperparámetros para los mejores modelos.
+    Optimiza hiperparámetros para los mejores modelos usando RandomizedSearchCV.
+    Para Random Forest additionally usa BayesSearchCV.
     
     Args:
         X_train (pandas.DataFrame): Features de entrenamiento.
@@ -574,68 +575,89 @@ def hiperparametrizar_modelos(X_train, y_train, mejores_3_modelos):
         >>> modelos_optimos = hiperparametrizar_modelos(X_train, y_train, mejores_modelos)
         >>> print(modelos_optimos['xgboost'].get_params())
     """
+    import time
+    
     print("\n" + "="*80)
-    print("OPTIMIZACIÓN DE HIPERPARÁMETROS")
+    print("OPTIMIZACIÓN DE HIPERPARÁMETROS (RandomizedSearchCV)")
     print("="*80)
     
     modelos_optimos = {}
     
     for nombre_modelo in mejores_3_modelos:
-        print(f"\nOptimizando {nombre_modelo}...")
+        print(f"\n{'='*80}")
+        print(f"Optimizando {nombre_modelo}...")
+        print(f"{'='*80}")
         
         # Obtener modelo base
         modelo_base = MODELOS[nombre_modelo]
         
-        # GridSearchCV
-        print("\n1. Aplicando GridSearchCV...")
-        grid = GridSearchCV(
+        # Tiempo inicio
+        inicio = time.time()
+        
+        # RandomizedSearchCV para todos los modelos
+        print("\n[1] Aplicando RandomizedSearchCV...")
+        random_search = RandomizedSearchCV(
             estimator=modelo_base,
-            param_grid=GRIDS_HIPERPARAMETROS[nombre_modelo],
-            cv=5,
-            scoring='roc_auc',
-            n_jobs=-1
-        )
-        grid.fit(X_train, y_train)
-        
-        mejor_score_grid = grid.best_score_
-        mejores_params_grid = grid.best_params_
-        
-        print(f"  Mejor AUC-ROC: {mejor_score_grid:.4f}")
-        print(f"  Mejores parámetros: {mejores_params_grid}")
-        
-        # BayesSearchCV
-        print("\n2. Aplicando BayesSearchCV...")
-        bayes = BayesSearchCV(
-            estimator=modelo_base,
-            search_spaces=ESPACIOS_BAYES[nombre_modelo],
-            n_iter=20,
+            param_distributions=GRIDS_HIPERPARAMETROS[nombre_modelo],
+            n_iter=10,
             cv=5,
             scoring='roc_auc',
             n_jobs=-1,
-            random_state=42
+            random_state=42,
+            verbose=0
         )
-        bayes.fit(X_train, y_train)
+        random_search.fit(X_train, y_train)
         
-        mejor_score_bayes = bayes.best_score_
-        mejores_params_bayes = bayes.best_params_
+        mejor_score_random = random_search.best_score_
+        mejores_params_random = random_search.best_params_
         
-        print(f"  Mejor AUC-ROC: {mejor_score_bayes:.4f}")
-        print(f"  Mejores parámetros: {mejores_params_bayes}")
+        print(f"  Mejor AUC-ROC: {mejor_score_random:.4f}")
+        print(f"  Mejores parámetros: {mejores_params_random}")
         
-        # Seleccionar el mejor entre Grid y Bayes
-        if mejor_score_grid >= mejor_score_bayes:
-            print("\nSeleccionando modelo de GridSearchCV (mejor AUC-ROC)")
-            modelo_optimo = grid.best_estimator_
-            mejor_score = mejor_score_grid
-            mejores_params = mejores_params_grid
-        else:
-            print("\nSeleccionando modelo de BayesSearchCV (mejor AUC-ROC)")
+        # Para Random Forest additionally ejecutar BayesSearchCV
+        mejor_score_bayes = -np.inf
+        mejores_params_bayes = None
+        bayes = None
+        
+        if nombre_modelo == 'random_forest':
+            print("\n[2] Aplicando BayesSearchCV (solo Random Forest)...")
+            bayes = BayesSearchCV(
+                estimator=modelo_base,
+                search_spaces=ESPACIOS_BAYES[nombre_modelo],
+                n_iter=15,
+                cv=5,
+                scoring='roc_auc',
+                n_jobs=-1,
+                random_state=42,
+                verbose=0
+            )
+            bayes.fit(X_train, y_train)
+            
+            mejor_score_bayes = bayes.best_score_
+            mejores_params_bayes = bayes.best_params_
+            
+            print(f"  Mejor AUC-ROC: {mejor_score_bayes:.4f}")
+            print(f"  Mejores parámetros: {mejores_params_bayes}")
+        
+        # Tiempo fin
+        fin = time.time()
+        tiempo_total = fin - inicio
+        
+        # Seleccionar el mejor (considerando Bayes si existe)
+        if bayes is not None and mejor_score_bayes > mejor_score_random:
+            print(f"\nSeleccionando modelo de BayesSearchCV (mejor AUC-ROC)")
             modelo_optimo = bayes.best_estimator_
             mejor_score = mejor_score_bayes
             mejores_params = mejores_params_bayes
+        else:
+            print(f"\nSeleccionando modelo de RandomizedSearchCV (mejor AUC-ROC)")
+            modelo_optimo = random_search.best_estimator_
+            mejor_score = mejor_score_random
+            mejores_params = mejores_params_random
         
         print(f"AUC-ROC final: {mejor_score:.4f}")
         print(f"Parámetros finales: {mejores_params}")
+        print(f"Tiempo total: {tiempo_total:.2f} segundos")
         
         # Guardar modelo optimizado
         modelos_optimos[nombre_modelo] = modelo_optimo
